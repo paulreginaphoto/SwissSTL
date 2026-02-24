@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, lazy, Suspense } from "react";
+import { useState, useCallback, useEffect, useMemo, lazy, Suspense } from "react";
 import { I18nProvider } from "./i18n/I18nContext";
 import MapView from "./components/MapView";
 import SearchBar from "./components/SearchBar";
 import Sidebar from "./components/Sidebar";
+import { extractMaskShape, maskShapeToGeo, type MaskShape } from "./utils/maskToPolygon";
 import "./index.css";
 
 const StlPreview = lazy(() => import("./components/StlPreview"));
@@ -33,7 +34,23 @@ function App() {
   const [clearCounter, setClearCounter] = useState(0);
   const [flyTarget, setFlyTarget] = useState<{ lng: number; lat: number; zoom: number } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [maskDisplayPoly, setMaskDisplayPoly] = useState<number[][] | null>(null);
+
+  // Mask state
+  const [maskShape, setMaskShape] = useState<MaskShape | null>(null);
+  const [maskCenter, setMaskCenter] = useState<{ lng: number; lat: number } | null>(null);
+  const [maskSizeM, setMaskSizeM] = useState(500);
+
+  const maskGeo = useMemo(() => {
+    if (!maskShape || !maskCenter) return null;
+    return maskShapeToGeo(maskShape, maskCenter, maskSizeM);
+  }, [maskShape, maskCenter, maskSizeM]);
+
+  useEffect(() => {
+    if (maskGeo) {
+      setBbox(maskGeo.bbox);
+      setClipPolygon(maskGeo.polygon);
+    }
+  }, [maskGeo]);
 
   const handleBboxChange = useCallback((newBbox: BBox | null) => {
     setBbox(newBbox);
@@ -41,18 +58,40 @@ function App() {
 
   const handleClipPolygon = useCallback((poly: number[][] | null) => {
     setClipPolygon(poly);
-    setMaskDisplayPoly(null);
-  }, []);
-
-  const handleMaskPolygon = useCallback((poly: number[][] | null) => {
-    setClipPolygon(poly);
-    setMaskDisplayPoly(poly);
+    if (poly) {
+      setMaskShape(null);
+      setMaskCenter(null);
+    }
   }, []);
 
   const handleClearSelection = useCallback(() => {
     setBbox(null);
     setClipPolygon(null);
-    setMaskDisplayPoly(null);
+    setMaskShape(null);
+    setMaskCenter(null);
+    setClearCounter((c) => c + 1);
+  }, []);
+
+  const handleMaskUpload = useCallback(async (file: File): Promise<boolean> => {
+    const shape = await extractMaskShape(file);
+    if (!shape) return false;
+    setMaskShape(shape);
+    setMaskCenter(null);
+    setBbox(null);
+    setClipPolygon(null);
+    setClearCounter((c) => c + 1);
+    return true;
+  }, []);
+
+  const handleMaskPlace = useCallback((lng: number, lat: number) => {
+    setMaskCenter({ lng, lat });
+  }, []);
+
+  const handleClearMask = useCallback(() => {
+    setMaskShape(null);
+    setMaskCenter(null);
+    setBbox(null);
+    setClipPolygon(null);
     setClearCounter((c) => c + 1);
   }, []);
 
@@ -68,6 +107,8 @@ function App() {
     return () => window.removeEventListener("keydown", handler);
   }, []);
 
+  const maskGeoPolygon = maskGeo?.polygon ?? null;
+
   return (
     <I18nProvider>
       <div className="app-layout">
@@ -78,7 +119,11 @@ function App() {
           setDrawMode={setDrawMode}
           onClearSelection={handleClearSelection}
           onPreviewUrl={setPreviewUrl}
-          onMaskPolygon={handleMaskPolygon}
+          maskShape={maskShape}
+          maskSizeM={maskSizeM}
+          onMaskSizeM={setMaskSizeM}
+          onMaskUpload={handleMaskUpload}
+          onClearMask={handleClearMask}
         />
         <div className="map-wrapper">
           {previewUrl ? (
@@ -96,7 +141,9 @@ function App() {
                 drawMode={drawMode}
                 clearCounter={clearCounter}
                 flyTarget={flyTarget}
-                externalPolygon={maskDisplayPoly}
+                externalPolygon={maskGeoPolygon}
+                maskPlacing={maskShape !== null && maskCenter === null}
+                onMaskPlace={handleMaskPlace}
               />
             </>
           )}

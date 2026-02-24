@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import type { BBox, GenerateOptions, DrawMode } from "../App";
 import { useTranslation } from "../i18n/I18nContext";
 import { LANG_LABELS, type Lang } from "../i18n/translations";
-import { pngMaskToPolygon } from "../utils/maskToPolygon";
+import type { MaskShape } from "../utils/maskToPolygon";
 
 const API_BASE = "http://localhost:8000";
 
@@ -13,7 +13,11 @@ interface SidebarProps {
   setDrawMode: (mode: DrawMode) => void;
   onClearSelection: () => void;
   onPreviewUrl: (url: string | null) => void;
-  onMaskPolygon: (poly: number[][] | null) => void;
+  maskShape: MaskShape | null;
+  maskSizeM: number;
+  onMaskSizeM: (m: number) => void;
+  onMaskUpload: (file: File) => Promise<boolean>;
+  onClearMask: () => void;
 }
 
 interface JobState {
@@ -54,7 +58,19 @@ function estimateDimensions(bbox: BBox): { widthKm: number; heightKm: number } {
   };
 }
 
-export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onClearSelection, onPreviewUrl, onMaskPolygon }: SidebarProps) {
+export default function Sidebar({
+  bbox,
+  clipPolygon,
+  drawMode,
+  setDrawMode,
+  onClearSelection,
+  onPreviewUrl,
+  maskShape,
+  maskSizeM,
+  onMaskSizeM,
+  onMaskUpload,
+  onClearMask,
+}: SidebarProps) {
   const { t, lang, setLang } = useTranslation();
 
   const [options, setOptions] = useState<GenerateOptions>({
@@ -68,6 +84,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onCl
   const [gridSplit, setGridSplit] = useState(1);
   const [showHistory, setShowHistory] = useState(false);
   const [maskName, setMaskName] = useState<string | null>(null);
+  const [maskLoading, setMaskLoading] = useState(false);
   const maskInputRef = useRef<HTMLInputElement>(null);
 
   interface HistoryEntry { name: string; url: string; date: string }
@@ -243,26 +260,33 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onCl
     onPreviewUrl(null);
   };
 
-  const handleMaskUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMaskFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!bbox) {
-      setError(t("selectFirst"));
-      return;
-    }
+    setMaskLoading(true);
+    setError(null);
     try {
-      const poly = await pngMaskToPolygon(file, bbox);
-      if (!poly) {
+      const ok = await onMaskUpload(file);
+      if (!ok) {
         setError(t("maskError"));
-        return;
+        setMaskName(null);
+      } else {
+        setMaskName(file.name);
       }
-      setMaskName(file.name);
-      onMaskPolygon(poly);
     } catch {
       setError(t("maskError"));
+      setMaskName(null);
     }
+    setMaskLoading(false);
     if (maskInputRef.current) maskInputRef.current.value = "";
   };
+
+  const handleClearMaskClick = () => {
+    setMaskName(null);
+    onClearMask();
+  };
+
+  const maskWaitingPlace = maskShape !== null && !bbox;
 
   return (
     <div className="sidebar">
@@ -351,7 +375,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onCl
           </div>
         ) : (
           <p style={{ fontSize: "0.85rem", color: "var(--color-text-muted)" }}>
-            {t("zoneHint")}
+            {maskWaitingPlace ? t("maskClickMap") : t("zoneHint")}
           </p>
         )}
       </div>
@@ -374,30 +398,64 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onCl
       </div>
 
       <div className="sidebar-section">
-        <h2>{t("maskTitle")}</h2>
-        <label className="btn-upload-mask" aria-disabled={!!isProcessing}>
-          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M10 3v10M5 8l5-5 5 5" />
-            <path d="M3 14v2a1 1 0 001 1h12a1 1 0 001-1v-2" />
-          </svg>
-          {t("uploadMask")}
-          <input
-            ref={maskInputRef}
-            type="file"
-            accept="image/png"
-            onChange={handleMaskUpload}
-            disabled={!!isProcessing}
-            hidden
-          />
-        </label>
-        {maskName && clipPolygon && (
-          <p style={{ fontSize: "0.72rem", color: "var(--color-accent)", marginTop: "4px" }}>
-            {maskName}
-          </p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>{t("maskTitle")}</h2>
+          {maskShape && (
+            <button className="btn-clear" onClick={handleClearMaskClick} title={t("clearSelection")}>
+              ✕
+            </button>
+          )}
+        </div>
+        {!maskShape ? (
+          <>
+            <label className="btn-upload-mask" aria-disabled={!!isProcessing || maskLoading}>
+              <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M10 3v10M5 8l5-5 5 5" />
+                <path d="M3 14v2a1 1 0 001 1h12a1 1 0 001-1v-2" />
+              </svg>
+              {maskLoading ? t("maskLoading") : t("uploadMask")}
+              <input
+                ref={maskInputRef}
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                onChange={handleMaskFile}
+                disabled={!!isProcessing || maskLoading}
+                hidden
+              />
+            </label>
+            <p style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", marginTop: "2px" }}>
+              {t("maskHint")}
+            </p>
+          </>
+        ) : (
+          <div className="mask-controls">
+            {maskName && (
+              <p style={{ fontSize: "0.72rem", color: "var(--color-accent)", margin: "4px 0" }}>
+                {maskName}
+              </p>
+            )}
+            {maskWaitingPlace && (
+              <p className="mask-place-hint">{t("maskClickMap")}</p>
+            )}
+            <div className="form-group" style={{ marginTop: "6px" }}>
+              <label>
+                {t("maskSize")}
+                <span className="range-value">
+                  {maskSizeM >= 1000 ? `${(maskSizeM / 1000).toFixed(1)} km` : `${maskSizeM} m`}
+                </span>
+              </label>
+              <input
+                type="range"
+                min="50"
+                max="5000"
+                step="50"
+                value={maskSizeM}
+                onChange={(e) => onMaskSizeM(parseInt(e.target.value))}
+                disabled={!!isProcessing}
+              />
+            </div>
+          </div>
         )}
-        <p style={{ fontSize: "0.68rem", color: "var(--color-text-muted)", marginTop: "2px" }}>
-          {t("maskHint")}
-        </p>
       </div>
 
       <div className="sidebar-section">

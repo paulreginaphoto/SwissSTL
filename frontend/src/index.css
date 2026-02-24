@@ -817,6 +817,26 @@ input[type="range"]::-webkit-slider-thumb {
   pointer-events: none;
 }
 
+.mask-controls {
+  margin-top: 4px;
+}
+
+.mask-place-hint {
+  font-size: 0.8rem;
+  color: var(--color-accent);
+  font-weight: 500;
+  padding: 8px 10px;
+  background: rgba(59, 130, 246, 0.08);
+  border-radius: 6px;
+  text-align: center;
+  animation: pulse-hint 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-hint {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
 .shortcut-hint {
   font-size: 0.6rem;
   opacity: 0.4;

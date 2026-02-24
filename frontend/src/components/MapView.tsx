@@ -13,6 +13,8 @@ interface MapViewProps {
   clearCounter: number;
   flyTarget: { lng: number; lat: number; zoom: number } | null;
   externalPolygon?: number[][] | null;
+  maskPlacing?: boolean;
+  onMaskPlace?: (lng: number, lat: number) => void;
 }
 
 const LAUSANNE_CENTER: [number, number] = [6.6323, 46.5197];
@@ -61,6 +63,8 @@ export default function MapView({
   clearCounter,
   flyTarget,
   externalPolygon,
+  maskPlacing,
+  onMaskPlace,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -71,11 +75,21 @@ export default function MapView({
   const sourceReadyRef = useRef(false);
   const [hasSelection, setHasSelection] = useState(false);
   const drawModeRef = useRef<DrawMode>(drawMode);
+  const maskPlacingRef = useRef(!!maskPlacing);
+  const onMaskPlaceRef = useRef(onMaskPlace);
   const { t } = useTranslation();
 
   useEffect(() => {
     drawModeRef.current = drawMode;
   }, [drawMode]);
+
+  useEffect(() => {
+    maskPlacingRef.current = !!maskPlacing;
+    onMaskPlaceRef.current = onMaskPlace;
+    if (mapRef.current) {
+      mapRef.current.getCanvas().style.cursor = maskPlacing ? "crosshair" : "";
+    }
+  }, [maskPlacing, onMaskPlace]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -227,6 +241,12 @@ export default function MapView({
       });
 
       sourceReadyRef.current = true;
+    });
+
+    map.on("click", (e) => {
+      if (maskPlacingRef.current && !e.originalEvent.shiftKey && onMaskPlaceRef.current) {
+        onMaskPlaceRef.current(e.lngLat.lng, e.lngLat.lat);
+      }
     });
 
     map.on("mousedown", (e) => {

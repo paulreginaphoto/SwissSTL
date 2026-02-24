@@ -27,9 +27,12 @@ const fr = {
 
   // Mask
   maskTitle: "Masque personnalis\u00e9",
-  uploadMask: "Importer un masque PNG",
-  maskHint: "Forme noire sur fond transparent. S\u00e9lectionnez d'abord une zone.",
-  maskError: "Impossible d'extraire une forme du PNG. V\u00e9rifiez que c'est du noir sur transparent.",
+  uploadMask: "Importer une forme",
+  maskHint: "PNG/JPG : forme sombre sur fond clair (ou inversement).",
+  maskError: "Impossible d'extraire une forme de l'image. V\u00e9rifiez le contraste.",
+  maskClickMap: "Cliquez sur la carte pour placer la forme",
+  maskLoading: "Analyse en cours...",
+  maskSize: "Taille",
 
   // Parameters
   paramsTitle: "Param\u00e8tres",
@@ -103,9 +106,12 @@ const en: typeof fr = {
   modeFreehand: "Freehand",
 
   maskTitle: "Custom mask",
-  uploadMask: "Upload PNG mask",
-  maskHint: "Black shape on transparent background. Select a zone first.",
-  maskError: "Could not extract a shape from the PNG. Make sure it's black on transparent.",
+  uploadMask: "Upload a shape",
+  maskHint: "PNG/JPG: dark shape on light background (or vice versa).",
+  maskError: "Could not extract a shape from the image. Check contrast.",
+  maskClickMap: "Click on the map to place the shape",
+  maskLoading: "Analyzing...",
+  maskSize: "Size",
 
   paramsTitle: "Parameters",
   resolution: "Terrain resolution",
@@ -172,9 +178,12 @@ const de: typeof fr = {
   modeFreehand: "Freihand",
 
   maskTitle: "Benutzerdefinierte Maske",
-  uploadMask: "PNG-Maske hochladen",
-  maskHint: "Schwarze Form auf transparentem Hintergrund. W\u00e4hlen Sie zuerst einen Bereich.",
-  maskError: "Konnte keine Form aus dem PNG extrahieren. Stellen Sie sicher, dass es schwarz auf transparent ist.",
+  uploadMask: "Form hochladen",
+  maskHint: "PNG/JPG: dunkle Form auf hellem Hintergrund (oder umgekehrt).",
+  maskError: "Konnte keine Form aus dem Bild extrahieren. Prüfen Sie den Kontrast.",
+  maskClickMap: "Klicken Sie auf die Karte, um die Form zu platzieren",
+  maskLoading: "Analyse...",
+  maskSize: "Grösse",
 
   paramsTitle: "Parameter",
   resolution: "Gel\u00e4ndeaufl\u00f6sung",
@@ -241,9 +250,12 @@ const it: typeof fr = {
   modeFreehand: "Mano libera",
 
   maskTitle: "Maschera personalizzata",
-  uploadMask: "Carica maschera PNG",
-  maskHint: "Forma nera su sfondo trasparente. Seleziona prima una zona.",
-  maskError: "Impossibile estrarre una forma dal PNG. Assicurati che sia nero su trasparente.",
+  uploadMask: "Carica una forma",
+  maskHint: "PNG/JPG: forma scura su sfondo chiaro (o viceversa).",
+  maskError: "Impossibile estrarre una forma dall'immagine. Controlla il contrasto.",
+  maskClickMap: "Clicca sulla mappa per posizionare la forma",
+  maskLoading: "Analisi...",
+  maskSize: "Dimensione",
 
   paramsTitle: "Parametri",
   resolution: "Risoluzione terreno",
@@ -310,9 +322,12 @@ const rm: typeof fr = {
   modeFreehand: "Maun libra",
 
   maskTitle: "Masca persunalisada",
-  uploadMask: "Chargiar masca PNG",
-  maskHint: "Furma naira sin fund transparent. Tscherna emprim ina zona.",
-  maskError: "Impussibel d'extrair ina furma dal PNG. Controllai ch'i saja nair sin transparent.",
+  uploadMask: "Chargiar ina furma",
+  maskHint: "PNG/JPG: furma stgira sin fund cler (u inversà).",
+  maskError: "Impussibel d'extrair ina furma da la maletg. Controllai il contrast.",
+  maskClickMap: "Cliccar sin la carta per plazzar la furma",
+  maskLoading: "Analisa...",
+  maskSize: "Grondezza",
 
   paramsTitle: "Parameters",
   resolution: "Resoluziun dal terren",

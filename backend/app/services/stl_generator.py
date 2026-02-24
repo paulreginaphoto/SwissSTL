@@ -27,63 +27,65 @@ MAX_GRID_DIM = 1200
 
 
 def _build_terrain_faces(xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: float) -> np.ndarray:
-    """Build watertight terrain solid: top + bottom + 4 side walls."""
+    """Build watertight terrain solid: top + bottom + 4 side walls.
+
+    Fully vectorised — no Python loops over the grid.
+    """
     rows, cols = z.shape
     model_width = float(xx[0, -1])
     model_height = float(yy[0, 0])
-    faces_list = []
 
-    for r in range(rows - 1):
-        for c in range(cols - 1):
-            faces_list.append(
-                [
-                    [xx[r, c], yy[r, c], z[r, c]],
-                    [xx[r + 1, c], yy[r + 1, c], z[r + 1, c]],
-                    [xx[r, c + 1], yy[r, c + 1], z[r, c + 1]],
-                ]
-            )
-            faces_list.append(
-                [
-                    [xx[r, c + 1], yy[r, c + 1], z[r, c + 1]],
-                    [xx[r + 1, c], yy[r + 1, c], z[r + 1, c]],
-                    [xx[r + 1, c + 1], yy[r + 1, c + 1], z[r + 1, c + 1]],
-                ]
-            )
+    def _stack(x, y, zz):
+        return np.stack([x, y, zz], axis=-1)
 
-    faces_list.append([[0, 0, base_z], [0, model_height, base_z], [model_width, 0, base_z]])
-    faces_list.append([[model_width, 0, base_z], [0, model_height, base_z], [model_width, model_height, base_z]])
+    # --- Top surface (2 triangles per cell) ---
+    tl = _stack(xx[:-1, :-1], yy[:-1, :-1], z[:-1, :-1])
+    bl = _stack(xx[1:, :-1], yy[1:, :-1], z[1:, :-1])
+    tr = _stack(xx[:-1, 1:], yy[:-1, 1:], z[:-1, 1:])
+    br = _stack(xx[1:, 1:], yy[1:, 1:], z[1:, 1:])
 
-    for c in range(cols - 1):
-        x0, x1 = xx[0, c], xx[0, c + 1]
-        y0 = yy[0, c]
-        z0, z1 = z[0, c], z[0, c + 1]
-        faces_list.append([[x0, y0, z0], [x1, y0, z1], [x0, y0, base_z]])
-        faces_list.append([[x1, y0, z1], [x1, y0, base_z], [x0, y0, base_z]])
+    tri_a = np.stack([tl, bl, tr], axis=-2).reshape(-1, 3, 3)
+    tri_b = np.stack([tr, bl, br], axis=-2).reshape(-1, 3, 3)
+    top_faces = np.concatenate([tri_a, tri_b], axis=0)
 
-    r = rows - 1
-    for c in range(cols - 1):
-        x0, x1 = xx[r, c], xx[r, c + 1]
-        y0 = yy[r, c]
-        z0, z1 = z[r, c], z[r, c + 1]
-        faces_list.append([[x0, y0, z0], [x0, y0, base_z], [x1, y0, z1]])
-        faces_list.append([[x1, y0, z1], [x0, y0, base_z], [x1, y0, base_z]])
+    # --- Bottom plate (2 triangles) ---
+    bottom = np.array([
+        [[0, 0, base_z], [0, model_height, base_z], [model_width, 0, base_z]],
+        [[model_width, 0, base_z], [0, model_height, base_z], [model_width, model_height, base_z]],
+    ], dtype=np.float32)
 
-    for r in range(rows - 1):
-        x0 = xx[r, 0]
-        y0, y1 = yy[r, 0], yy[r + 1, 0]
-        z0, z1 = z[r, 0], z[r + 1, 0]
-        faces_list.append([[x0, y0, z0], [x0, y0, base_z], [x0, y1, z1]])
-        faces_list.append([[x0, y1, z1], [x0, y1, base_z], [x0, y0, base_z]])
+    # --- Side walls (vectorised per edge) ---
+    def _wall_strip(x0, y0, z0, x1, y1, z1, flip=False):
+        bz = np.full_like(z0, base_z)
+        p0 = _stack(x0, y0, z0)
+        p1 = _stack(x1, y1, z1)
+        p0b = _stack(x0, y0, bz)
+        p1b = _stack(x1, y1, bz)
+        if flip:
+            a = np.stack([p0, p0b, p1], axis=-2)
+            b = np.stack([p1, p0b, p1b], axis=-2)
+        else:
+            a = np.stack([p0, p1, p0b], axis=-2)
+            b = np.stack([p1, p1b, p0b], axis=-2)
+        return np.concatenate([a, b], axis=0)
 
-    c = cols - 1
-    for r in range(rows - 1):
-        x0 = xx[r, c]
-        y0, y1 = yy[r, c], yy[r + 1, c]
-        z0, z1 = z[r, c], z[r + 1, c]
-        faces_list.append([[x0, y0, z0], [x0, y1, z1], [x0, y0, base_z]])
-        faces_list.append([[x0, y1, z1], [x0, y1, base_z], [x0, y0, base_z]])
+    wall_top = _wall_strip(
+        xx[0, :-1], yy[0, :-1], z[0, :-1],
+        xx[0, 1:], yy[0, 1:], z[0, 1:])
+    wall_bottom = _wall_strip(
+        xx[-1, :-1], yy[-1, :-1], z[-1, :-1],
+        xx[-1, 1:], yy[-1, 1:], z[-1, 1:], flip=True)
+    wall_left = _wall_strip(
+        xx[:-1, 0], yy[:-1, 0], z[:-1, 0],
+        xx[1:, 0], yy[1:, 0], z[1:, 0], flip=True)
+    wall_right = _wall_strip(
+        xx[:-1, -1], yy[:-1, -1], z[:-1, -1],
+        xx[1:, -1], yy[1:, -1], z[1:, -1])
 
-    return np.array(faces_list, dtype=np.float32)
+    return np.concatenate(
+        [top_faces, bottom, wall_top, wall_bottom, wall_left, wall_right],
+        axis=0,
+    ).astype(np.float32)
 
 
 def _repair_building_mesh(verts_mm: np.ndarray, faces: np.ndarray) -> np.ndarray:
@@ -111,12 +113,9 @@ def _repair_building_mesh(verts_mm: np.ndarray, faces: np.ndarray) -> np.ndarray
         f"{len(mesh.vertices)} verts, watertight={mesh.is_watertight}"
     )
 
-    out = np.zeros((len(mesh.faces), 3, 3), dtype=np.float32)
     verts = np.asarray(mesh.vertices, dtype=np.float32)
-    for i, f in enumerate(mesh.faces):
-        out[i, 0] = verts[f[0]]
-        out[i, 1] = verts[f[1]]
-        out[i, 2] = verts[f[2]]
+    faces_idx = np.asarray(mesh.faces)
+    out = verts[faces_idx]
     return out
 
 
@@ -201,17 +200,21 @@ def _fix_normals_global(all_face_data: np.ndarray) -> np.ndarray:
     if not nondegen.all():
         mesh.update_faces(nondegen)
 
-    out = np.zeros((len(mesh.faces), 3, 3), dtype=np.float32)
     verts = np.asarray(mesh.vertices, dtype=np.float32)
-    for i, f in enumerate(mesh.faces):
-        out[i, 0] = verts[f[0]]
-        out[i, 1] = verts[f[1]]
-        out[i, 2] = verts[f[2]]
+    faces_idx = np.asarray(mesh.faces)
+    out = verts[faces_idx]
     return out
 
 
+SPLIT_FACE_LIMIT = 500_000
+
+
 def _mesh_integrity_metrics(face_data: np.ndarray) -> dict:
-    """Compute final STL integrity metrics."""
+    """Compute final STL integrity metrics.
+
+    For meshes above SPLIT_FACE_LIMIT, skip the expensive mesh.split()
+    call (requires graph traversal of all edges) and report components=-1.
+    """
     verts = face_data.reshape(-1, 3).astype(np.float64)
     faces_idx = np.arange(len(face_data) * 3, dtype=np.int32).reshape(-1, 3)
     mesh = trimesh.Trimesh(vertices=verts, faces=faces_idx, process=False)
@@ -223,7 +226,13 @@ def _mesh_integrity_metrics(face_data: np.ndarray) -> dict:
 
     nondeg = mesh.nondegenerate_faces()
     deg_faces = int((~nondeg).sum())
-    comp_count = len(mesh.split(only_watertight=False))
+
+    if len(mesh.faces) <= SPLIT_FACE_LIMIT:
+        comp_count = len(mesh.split(only_watertight=False))
+    else:
+        comp_count = -1
+        logger.info(f"Skipping mesh.split() for {len(mesh.faces)} faces (limit={SPLIT_FACE_LIMIT})")
+
     return {
         "faces": int(len(mesh.faces)),
         "verts": int(len(mesh.vertices)),

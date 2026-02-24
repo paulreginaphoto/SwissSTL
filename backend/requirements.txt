@@ -5,6 +5,7 @@ rasterio
 numpy
 numpy-stl
 trimesh
+scipy
 pyproj
 shapely
 geopandas

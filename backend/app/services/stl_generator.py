@@ -254,12 +254,16 @@ def generate_terrain_stl(
     terrain_lv95_bbox: Optional[tuple] = None,
     road_polygons_lv95: Optional[list] = None,
     on_progress=None,
+    global_min_elev: Optional[float] = None,
 ) -> str:
     """Convert terrain + optional buildings + roads into a single STL file.
 
     Buildings are expected in LV95/LN02 (same CRS as the terrain elevation grid).
     The conversion to model coordinates (mm) uses the same formula for both
     terrain and buildings: subtract min_elev, multiply by z_scale.
+
+    For multi-tile grids, pass global_min_elev (shared across all tiles) so
+    the z reference is consistent and edges align when tiles are assembled.
     """
     rows, cols = elevation.shape
     logger.info(f"Generating STL: {rows}x{cols} grid, {model_width_mm}mm target width")
@@ -285,7 +289,7 @@ def generate_terrain_stl(
     height_mm = lv95_height * horizontal_scale
     z_scale = horizontal_scale * z_exaggeration
 
-    min_elev = float(np.nanmin(elevation))
+    min_elev = global_min_elev if global_min_elev is not None else float(np.nanmin(elevation))
     z = (elevation - min_elev) * z_scale
     z = np.nan_to_num(z, nan=0.0).astype(np.float32)
 

@@ -60,6 +60,7 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
     includeRoads: true,
     modelWidthMm: 150,
   });
+  const [gridSplit, setGridSplit] = useState(1);
 
   const [job, setJob] = useState<JobState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +155,7 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
           include_buildings: options.includeBuildings,
           include_roads: options.includeRoads,
           model_width_mm: options.modelWidthMm,
+          grid_split: gridSplit,
         }),
       });
 
@@ -275,6 +277,27 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="sidebar-section">
+        <h2>{t("gridTitle")}</h2>
+        <div className="draw-mode-group">
+          {[1, 2, 3, 4].map((n) => (
+            <button
+              key={n}
+              className={`draw-mode-btn ${gridSplit === n ? "active" : ""}`}
+              onClick={() => setGridSplit(n)}
+              disabled={!!isProcessing}
+            >
+              {n === 1 ? t("gridSingle") : `${n}x${n}`}
+            </button>
+          ))}
+        </div>
+        {gridSplit > 1 && (
+          <p style={{ fontSize: "0.75rem", color: "var(--color-text-muted)", marginTop: "0.3rem" }}>
+            {t("gridInfo", { n: gridSplit, total: gridSplit * gridSplit, width: options.modelWidthMm })}
+          </p>
+        )}
       </div>
 
       <div className="sidebar-section">
@@ -440,7 +463,7 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
           )}
           {job.status === "completed" && job.downloadUrl && (
             <button className="btn-download" onClick={handleDownload}>
-              {t("downloadStl")}
+              {job.downloadUrl.endsWith(".zip") ? t("downloadZip") : t("downloadStl")}
             </button>
           )}
           {job.status === "failed" && (

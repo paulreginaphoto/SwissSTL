@@ -46,7 +46,13 @@ const fr = {
   lastUpdate: "Derni\u00e8re MAJ",
   stallWarning: "Pas d'avanc\u00e9e depuis {time}. Le backend est probablement en calcul lourd.",
   downloadStl: "T\u00e9l\u00e9charger le STL",
+  downloadZip: "T\u00e9l\u00e9charger le ZIP ({n} tuiles)",
   connectionLost: "Connexion au serveur perdue",
+
+  // Grid split
+  gridTitle: "D\u00e9coupage en grille",
+  gridSingle: "1 seul",
+  gridInfo: "{n}x{n} = {total} tuiles STL (ZIP), chaque tuile = {width}mm",
 
   // Buttons
   generating: "G\u00e9n\u00e9ration en cours... {pct}%",
@@ -96,7 +102,12 @@ const en: typeof fr = {
   lastUpdate: "Last update",
   stallWarning: "No progress for {time}. The backend is probably computing.",
   downloadStl: "Download STL",
+  downloadZip: "Download ZIP ({n} tiles)",
   connectionLost: "Connection to server lost",
+
+  gridTitle: "Grid split",
+  gridSingle: "Single",
+  gridInfo: "{n}x{n} = {total} STL tiles (ZIP), each tile = {width}mm",
 
   generating: "Generating... {pct}%",
   generate: "Generate STL",
@@ -144,7 +155,12 @@ const de: typeof fr = {
   lastUpdate: "Letztes Update",
   stallWarning: "Kein Fortschritt seit {time}. Das Backend rechnet wahrscheinlich.",
   downloadStl: "STL herunterladen",
+  downloadZip: "ZIP herunterladen ({n} Kacheln)",
   connectionLost: "Verbindung zum Server verloren",
+
+  gridTitle: "Rasteraufteilung",
+  gridSingle: "Einzeln",
+  gridInfo: "{n}x{n} = {total} STL-Kacheln (ZIP), jede Kachel = {width}mm",
 
   generating: "Generierung l\u00e4uft... {pct}%",
   generate: "STL generieren",

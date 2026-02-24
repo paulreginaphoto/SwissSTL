@@ -232,28 +232,37 @@ async def get_building_meshes(
             on_progress(100)
         return np.empty((0, 3), dtype=np.float64), np.empty((0, 3), dtype=np.int32)
 
-    all_verts: list[np.ndarray] = []
-    all_faces: list[np.ndarray] = []
+    results: list[tuple[int, np.ndarray, np.ndarray]] = []
+    completed = 0
+    total = len(items)
 
-    for i, item in enumerate(items):
+    async def _process_one(idx: int, item: dict):
+        nonlocal completed
         try:
             verts, faces = await asyncio.to_thread(
                 _process_tile_sync, item, min_e, min_n, max_e, max_n,
             )
-
             if len(verts) > 0:
-                offset = sum(len(v) for v in all_verts)
-                all_verts.append(verts)
-                all_faces.append(faces + offset)
+                results.append((idx, verts, faces))
                 logger.info(
                     f"Tile {item.get('id', '?')}: {len(verts)} verts, {len(faces)} faces"
                 )
-
         except Exception as e:
             logger.warning(f"Failed to process tile {item.get('id', '?')}: {e}")
-
+        completed += 1
         if on_progress:
-            on_progress(int((i + 1) / len(items) * 100))
+            on_progress(int(completed / total * 100))
+
+    await asyncio.gather(*[_process_one(i, item) for i, item in enumerate(items)])
+
+    results.sort(key=lambda r: r[0])
+
+    all_verts: list[np.ndarray] = []
+    all_faces: list[np.ndarray] = []
+    for _idx, verts, faces in results:
+        offset = sum(len(v) for v in all_verts)
+        all_verts.append(verts)
+        all_faces.append(faces + offset)
 
     if not all_verts:
         logger.warning("No building geometry extracted from DXF tiles")

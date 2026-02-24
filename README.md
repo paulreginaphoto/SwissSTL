@@ -90,36 +90,32 @@ npm run dev
 
 Open **http://localhost:5173** in your browser.
 
-### One-Click Launcher (macOS/Linux)
+### One-Click Launcher (Windows) — Recommended
 
-Use the included launcher to install missing dependencies automatically and start both backend + frontend:
+Double-click `start.bat` or run it from a terminal:
+
+```
+start.bat
+```
+
+### One-Click Launcher (macOS / Linux)
 
 ```bash
 chmod +x start.sh
 ./start.sh
 ```
 
-Behavior:
-- Creates `backend/venv` if missing
-- Installs backend dependencies from `backend/requirements.txt` if needed
-- Installs frontend dependencies (`npm install`) if needed
-- Starts backend (`:8000`) and frontend (`:5173`) together
-- Stops both services cleanly on `Ctrl+C`
+### What the launchers do
 
-### One-Click Launcher (Windows / PowerShell)
+- **Auto-detect** Python 3 and Node.js in PATH
+- **Auto-install** via `winget` (Windows), `brew` (macOS), or `apt`/`dnf` (Linux) if missing
+- Create `backend/venv` and install pip dependencies if needed
+- Run `npm install` for the frontend if needed
+- Start backend (`:8000`) and frontend (`:5173`) together
+- Open your browser to `http://localhost:5173`
+- Stop cleanly on exit
 
-Use the Windows launcher for the same one-command setup and start:
-
-```powershell
-.\start.ps1
-```
-
-Behavior:
-- Creates `backend\venv` if missing
-- Installs backend dependencies if needed
-- Installs frontend dependencies if needed
-- Starts backend (`:8000`) and frontend (`:5173`) together
-- Stops both services when interrupted
+> **Windows tip:** If you get a PowerShell execution policy error, use `start.bat` instead of `start.ps1`. The `.bat` file has no restrictions.
 
 ### Usage
 
@@ -168,6 +164,9 @@ swissstl/
 │   │       ├── translations.ts  # FR/EN/DE strings
 │   │       └── I18nContext.tsx   # React context + hook
 │   └── package.json
+├── start.bat              # Windows one-click launcher
+├── start.ps1              # Windows PowerShell launcher
+├── start.sh               # macOS/Linux launcher
 ├── LICENSE
 ├── .gitignore
 └── README.md

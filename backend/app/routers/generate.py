@@ -1,11 +1,15 @@
 import io
 import os
+import re
 import uuid
 import logging
 import zipfile
+from typing import Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 
+import httpx
 import numpy as np
+from pyproj import Transformer
 
 from app.models.schemas import GenerateRequest, JobResponse, JobStatus
 from app.services.terrain import get_terrain_grid, estimate_area_km2, wgs84_to_lv95_bbox
@@ -14,6 +18,55 @@ from app.services.roads import get_road_polygons
 from app.services.stl_generator import generate_terrain_stl, OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
+
+_WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
+
+
+def _slugify(text: str) -> str:
+    """Turn a place name into a safe filename slug."""
+    text = text.lower().strip()
+    text = re.sub(r"[àâä]", "a", text)
+    text = re.sub(r"[éèêë]", "e", text)
+    text = re.sub(r"[îï]", "i", text)
+    text = re.sub(r"[ôö]", "o", text)
+    text = re.sub(r"[ùûü]", "u", text)
+    text = re.sub(r"[ç]", "c", text)
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_")[:40]
+
+
+async def _resolve_place_name(min_lon: float, min_lat: float, max_lon: float, max_lat: float) -> Optional[str]:
+    """Reverse-geocode the bbox center to get the main city/town name."""
+    cx = (min_lon + max_lon) / 2
+    cy = (min_lat + max_lat) / 2
+    url = (
+        f"https://nominatim.openstreetmap.org/reverse"
+        f"?lat={cy}&lon={cx}&format=jsonv2&zoom=12&accept-language=fr"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url, headers={"User-Agent": "SwissSTL/1.0"})
+            if resp.status_code == 200:
+                data = resp.json()
+                addr = data.get("address", {})
+                name = addr.get("city") or addr.get("town") or addr.get("village") or addr.get("municipality")
+                if name:
+                    logger.info(f"Reverse geocode: {cx:.4f},{cy:.4f} -> {name}")
+                    return name
+    except Exception as e:
+        logger.warning(f"Reverse geocode failed: {e}")
+    return None
+
+
+def _convert_clip_polygon(clip_wgs84) -> Optional[list]:
+    """Convert [[lon,lat],...] WGS84 polygon to [[E,N],...] LV95."""
+    if not clip_wgs84:
+        return None
+    result = []
+    for pt in clip_wgs84:
+        e, n = _WGS84_TO_LV95.transform(pt[0], pt[1])
+        result.append([e, n])
+    return result
 
 router = APIRouter()
 
@@ -121,6 +174,8 @@ async def _generate_single(job_id: str, request: GenerateRequest, job: JobRespon
         job.progress = 60.0 + (pct - 60) * 1.0
         job.message = f"Generation STL... {int(job.progress)}%"
 
+    clip_lv95 = _convert_clip_polygon(request.clip_polygon)
+
     output_path = generate_terrain_stl(
         elevation=elevation, job_id=job_id,
         model_width_mm=request.model_width_mm, z_exaggeration=request.z_exaggeration,
@@ -128,6 +183,7 @@ async def _generate_single(job_id: str, request: GenerateRequest, job: JobRespon
         building_verts_lv95=building_verts, building_faces=building_faces,
         terrain_lv95_bbox=meta.get("lv95_bbox"), road_polygons_lv95=road_polygons,
         on_progress=sp,
+        clip_polygon_lv95=clip_lv95,
     )
 
     job.status = JobStatus.COMPLETED
@@ -226,6 +282,7 @@ async def _generate_grid(job_id: str, request: GenerateRequest, job: JobResponse
         job.message = f"Tuile {tile_num}/{total_tiles}: generation STL..."
         job.progress = base_progress + progress_per_tile * 0.5
 
+        clip_lv95 = _convert_clip_polygon(request.clip_polygon)
         tile_job_id = f"{job_id}_R{row}C{col}"
         output_path = generate_terrain_stl(
             elevation=tile_elev,
@@ -238,6 +295,7 @@ async def _generate_grid(job_id: str, request: GenerateRequest, job: JobResponse
             terrain_lv95_bbox=t_lv95,
             road_polygons_lv95=tile_roads,
             global_min_elev=global_min_elev,
+            clip_polygon_lv95=clip_lv95,
         )
 
         stl_paths.append((row, col, output_path))
@@ -288,8 +346,6 @@ async def process_job(job_id: str, request: GenerateRequest):
 @router.post("/generate", response_model=JobResponse)
 async def generate_stl(request: GenerateRequest, background_tasks: BackgroundTasks):
     """Start STL generation for the given bounding box and parameters."""
-    job_id = str(uuid.uuid4())
-
     bbox = request.bbox
     if not (5.9 <= bbox.min_lon <= 10.5 and 5.9 <= bbox.max_lon <= 10.5
             and 45.8 <= bbox.min_lat <= 47.9 and 45.8 <= bbox.max_lat <= 47.9):
@@ -307,6 +363,13 @@ async def generate_stl(request: GenerateRequest, background_tasks: BackgroundTas
             status_code=400,
             detail=f"Zone trop grande ({area_km2:.1f} km²). Maximum = {MAX_AREA_KM2:.0f} km². Réduisez la sélection."
         )
+
+    place_name = await _resolve_place_name(bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat)
+    short_id = uuid.uuid4().hex[:6]
+    if place_name:
+        job_id = f"{_slugify(place_name)}_{short_id}"
+    else:
+        job_id = short_id
 
     grid = request.grid_split
     suffix = f" [{grid}x{grid} = {grid*grid} tuiles]" if grid > 1 else ""

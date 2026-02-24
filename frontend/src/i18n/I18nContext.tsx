@@ -9,11 +9,15 @@ interface I18nContextValue {
 
 const I18nContext = createContext<I18nContextValue | null>(null);
 
+const ALL_LANGS: Lang[] = ["fr", "en", "de", "it", "rm"];
+
 function getInitialLang(): Lang {
   const stored = localStorage.getItem("swissstl-lang");
-  if (stored === "fr" || stored === "en" || stored === "de") return stored;
+  if (stored && ALL_LANGS.includes(stored as Lang)) return stored as Lang;
   const nav = navigator.language.slice(0, 2).toLowerCase();
   if (nav === "de") return "de";
+  if (nav === "it") return "it";
+  if (nav === "rm") return "rm";
   if (nav === "en") return "en";
   return "fr";
 }

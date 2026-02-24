@@ -24,6 +24,7 @@ export type DrawMode = "rect" | "circle" | "freehand";
 
 function App() {
   const [bbox, setBbox] = useState<BBox | null>(null);
+  const [clipPolygon, setClipPolygon] = useState<number[][] | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawMode, setDrawMode] = useState<DrawMode>("rect");
 
@@ -31,16 +32,22 @@ function App() {
     setBbox(newBbox);
   }, []);
 
+  const handleClipPolygon = useCallback((poly: number[][] | null) => {
+    setClipPolygon(poly);
+  }, []);
+
   return (
     <I18nProvider>
       <div className="app-layout">
         <Sidebar
           bbox={bbox}
+          clipPolygon={clipPolygon}
           drawMode={drawMode}
           setDrawMode={setDrawMode}
         />
         <MapView
           onBboxChange={handleBboxChange}
+          onClipPolygon={handleClipPolygon}
           isDrawing={isDrawing}
           setIsDrawing={setIsDrawing}
           drawMode={drawMode}

@@ -14,9 +14,9 @@ SwissSTL combines official swisstopo geodata — **SwissALTI3D** (LiDAR terrain)
 - **Configurable output**: model width, vertical exaggeration, base thickness
 - **Automatic mesh repair**: normal fixing, degenerate face removal, vertex merging
 
-## Screenshots
+## Preview
 
-> _Screenshots coming soon._
+![SwissSTL — Lausanne city center](docs/preview.png)
 
 ## Tech Stack
 

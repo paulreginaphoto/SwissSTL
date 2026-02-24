@@ -11,7 +11,7 @@ from typing import Optional
 import numpy as np
 import trimesh
 from shapely import contains_xy
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 from stl import mesh as stl_mesh
 
 logger = logging.getLogger(__name__)
@@ -26,10 +26,15 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 MAX_GRID_DIM = 1200
 
 
-def _build_terrain_faces(xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: float) -> np.ndarray:
-    """Build watertight terrain solid: top + bottom + 4 side walls.
+def _build_terrain_faces(
+    xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: float,
+    clip_mask: Optional[np.ndarray] = None,
+) -> np.ndarray:
+    """Build terrain solid: top surface + bottom plate + walls.
 
-    Fully vectorised — no Python loops over the grid.
+    If clip_mask is provided (bool array same shape as z), only quads where
+    all 4 corners are inside the mask are generated.  Rectangular walls/base
+    are omitted when a mask is active (caller provides polygon walls/base).
     """
     rows, cols = z.shape
     model_width = float(xx[0, -1])
@@ -38,7 +43,6 @@ def _build_terrain_faces(xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: 
     def _stack(x, y, zz):
         return np.stack([x, y, zz], axis=-1)
 
-    # --- Top surface (2 triangles per cell) ---
     tl = _stack(xx[:-1, :-1], yy[:-1, :-1], z[:-1, :-1])
     bl = _stack(xx[1:, :-1], yy[1:, :-1], z[1:, :-1])
     tr = _stack(xx[:-1, 1:], yy[:-1, 1:], z[:-1, 1:])
@@ -46,15 +50,25 @@ def _build_terrain_faces(xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: 
 
     tri_a = np.stack([tl, bl, tr], axis=-2).reshape(-1, 3, 3)
     tri_b = np.stack([tr, bl, br], axis=-2).reshape(-1, 3, 3)
+
+    if clip_mask is not None:
+        quad_valid = (
+            clip_mask[:-1, :-1] & clip_mask[:-1, 1:]
+            & clip_mask[1:, :-1] & clip_mask[1:, 1:]
+        ).ravel()
+        tri_a = tri_a[quad_valid]
+        tri_b = tri_b[quad_valid]
+
     top_faces = np.concatenate([tri_a, tri_b], axis=0)
 
-    # --- Bottom plate (2 triangles) ---
+    if clip_mask is not None:
+        return top_faces.astype(np.float32)
+
     bottom = np.array([
         [[0, 0, base_z], [0, model_height, base_z], [model_width, 0, base_z]],
         [[model_width, 0, base_z], [0, model_height, base_z], [model_width, model_height, base_z]],
     ], dtype=np.float32)
 
-    # --- Side walls (vectorised per edge) ---
     def _wall_strip(x0, y0, z0, x1, y1, z1, flip=False):
         bz = np.full_like(z0, base_z)
         p0 = _stack(x0, y0, z0)
@@ -206,6 +220,106 @@ def _fix_normals_global(all_face_data: np.ndarray) -> np.ndarray:
     return out
 
 
+def _compute_clip_mask(
+    rows: int, cols: int,
+    clip_polygon_lv95: list[list[float]],
+    terrain_lv95_bbox: tuple,
+) -> np.ndarray:
+    """Return boolean mask (rows, cols) — True where cell centre is inside polygon."""
+    min_e, min_n, max_e, max_n = terrain_lv95_bbox
+    poly_coords = np.array(clip_polygon_lv95, dtype=np.float64)
+    if poly_coords.shape[0] < 3:
+        return np.ones((rows, cols), dtype=bool)
+
+    poly = Polygon(poly_coords[:, :2])
+    if poly.is_empty or not poly.is_valid:
+        return np.ones((rows, cols), dtype=bool)
+
+    e_coords = np.linspace(min_e, max_e, cols, dtype=np.float64)
+    n_coords = np.linspace(max_n, min_n, rows, dtype=np.float64)
+    ee, nn = np.meshgrid(e_coords, n_coords)
+
+    inside = contains_xy(poly, ee, nn)
+    logger.info(f"Clip mask: {int(inside.sum())}/{rows*cols} cells inside polygon")
+    return inside
+
+
+def _build_polygon_walls(
+    clip_polygon_lv95: list[list[float]],
+    terrain_lv95_bbox: tuple,
+    xx: np.ndarray, yy: np.ndarray, z: np.ndarray,
+    model_width_mm: float, height_mm: float,
+    base_z: float,
+) -> np.ndarray:
+    """Build vertical walls along the clip polygon perimeter."""
+    min_e, min_n, max_e, max_n = terrain_lv95_bbox
+    lv95_width = max_e - min_e
+    lv95_height = max_n - min_n
+    rows, cols = z.shape
+
+    poly_pts = np.array(clip_polygon_lv95, dtype=np.float64)
+    n_pts = len(poly_pts)
+    if n_pts < 3:
+        return np.empty((0, 3, 3), dtype=np.float32)
+
+    px = (poly_pts[:, 0] - min_e) / lv95_width * model_width_mm
+    py = (poly_pts[:, 1] - min_n) / lv95_height * height_mm
+
+    col_idx = np.clip(((poly_pts[:, 0] - min_e) / lv95_width * (cols - 1)).astype(int), 0, cols - 1)
+    row_idx = np.clip(((max_n - poly_pts[:, 1]) / lv95_height * (rows - 1)).astype(int), 0, rows - 1)
+    pz = z[row_idx, col_idx].astype(np.float32)
+
+    faces = []
+    for i in range(n_pts - 1):
+        x0, y0, z0 = px[i], py[i], pz[i]
+        x1, y1, z1 = px[i + 1], py[i + 1], pz[i + 1]
+        faces.append([[x0, y0, z0], [x1, y1, z1], [x0, y0, base_z]])
+        faces.append([[x1, y1, z1], [x1, y1, base_z], [x0, y0, base_z]])
+
+    return np.array(faces, dtype=np.float32) if faces else np.empty((0, 3, 3), dtype=np.float32)
+
+
+def _build_polygon_base(
+    clip_polygon_lv95: list[list[float]],
+    terrain_lv95_bbox: tuple,
+    model_width_mm: float, height_mm: float,
+    base_z: float,
+) -> np.ndarray:
+    """Build a flat base plate in the shape of the clip polygon."""
+    from scipy.spatial import Delaunay
+
+    min_e, min_n, max_e, max_n = terrain_lv95_bbox
+    lv95_width = max_e - min_e
+    lv95_height = max_n - min_n
+
+    poly_pts = np.array(clip_polygon_lv95, dtype=np.float64)
+    if poly_pts.shape[0] < 3:
+        return np.empty((0, 3, 3), dtype=np.float32)
+
+    px = (poly_pts[:, 0] - min_e) / lv95_width * model_width_mm
+    py = (poly_pts[:, 1] - min_n) / lv95_height * height_mm
+    pts2d = np.column_stack([px, py])
+
+    if len(pts2d) > 3 and np.allclose(pts2d[0], pts2d[-1]):
+        pts2d = pts2d[:-1]
+
+    tri = Delaunay(pts2d)
+    poly_shape = Polygon(pts2d)
+    faces = []
+    for simplex in tri.simplices:
+        cx = pts2d[simplex, 0].mean()
+        cy = pts2d[simplex, 1].mean()
+        if poly_shape.contains(Point(cx, cy)):
+            v0, v1, v2 = simplex
+            faces.append([
+                [pts2d[v0, 0], pts2d[v0, 1], base_z],
+                [pts2d[v2, 0], pts2d[v2, 1], base_z],
+                [pts2d[v1, 0], pts2d[v1, 1], base_z],
+            ])
+
+    return np.array(faces, dtype=np.float32) if faces else np.empty((0, 3, 3), dtype=np.float32)
+
+
 SPLIT_FACE_LIMIT = 500_000
 
 
@@ -255,6 +369,7 @@ def generate_terrain_stl(
     road_polygons_lv95: Optional[list] = None,
     on_progress=None,
     global_min_elev: Optional[float] = None,
+    clip_polygon_lv95: Optional[list[list[float]]] = None,
 ) -> str:
     """Convert terrain + optional buildings + roads into a single STL file.
 
@@ -264,6 +379,9 @@ def generate_terrain_stl(
 
     For multi-tile grids, pass global_min_elev (shared across all tiles) so
     the z reference is consistent and edges align when tiles are assembled.
+
+    If clip_polygon_lv95 is provided (list of [E,N] coords), terrain cells
+    outside the polygon are flattened to base level, creating a shaped model.
     """
     rows, cols = elevation.shape
     logger.info(f"Generating STL: {rows}x{cols} grid, {model_width_mm}mm target width")
@@ -296,6 +414,10 @@ def generate_terrain_stl(
     if road_polygons_lv95 and terrain_lv95_bbox:
         z = _apply_road_emboss(z, road_polygons_lv95, terrain_lv95_bbox, road_raise_mm=0.15)
 
+    clip_mask = None
+    if clip_polygon_lv95 and terrain_lv95_bbox:
+        clip_mask = _compute_clip_mask(rows, cols, clip_polygon_lv95, terrain_lv95_bbox)
+
     base_z = -base_height_mm
     x = np.linspace(0, model_width_mm, cols, dtype=np.float32)
     y = np.linspace(0, height_mm, rows, dtype=np.float32)[::-1]
@@ -308,7 +430,7 @@ def generate_terrain_stl(
     if on_progress:
         on_progress(60)
 
-    terrain_faces = _build_terrain_faces(xx, yy, z, base_z)
+    terrain_faces = _build_terrain_faces(xx, yy, z, base_z, clip_mask=clip_mask)
     logger.info(f"Terrain: {len(terrain_faces)} faces")
     if on_progress:
         on_progress(75)
@@ -336,6 +458,12 @@ def generate_terrain_stl(
             & (by >= -margin) & (by <= height_mm + margin)
         )
 
+        if clip_polygon_lv95:
+            clip_poly = Polygon(np.array(clip_polygon_lv95)[:, :2])
+            if clip_poly.is_valid and not clip_poly.is_empty:
+                in_poly = contains_xy(clip_poly, bv[:, 0], bv[:, 1])
+                in_bounds = in_bounds & in_poly
+
         face_keep = in_bounds[bf_arr[:, 0]] & in_bounds[bf_arr[:, 1]] & in_bounds[bf_arr[:, 2]]
         valid_faces = bf_arr[face_keep]
 
@@ -356,6 +484,22 @@ def generate_terrain_stl(
         on_progress(85)
 
     parts = [terrain_faces]
+
+    if clip_mask is not None and clip_polygon_lv95 and terrain_lv95_bbox:
+        poly_walls = _build_polygon_walls(
+            clip_polygon_lv95, terrain_lv95_bbox, xx, yy, z,
+            model_width_mm, height_mm, base_z,
+        )
+        poly_base = _build_polygon_base(
+            clip_polygon_lv95, terrain_lv95_bbox,
+            model_width_mm, height_mm, base_z,
+        )
+        if len(poly_walls) > 0:
+            parts.append(poly_walls)
+        if len(poly_base) > 0:
+            parts.append(poly_base)
+        logger.info(f"Polygon shape: {len(poly_walls)} wall faces, {len(poly_base)} base faces")
+
     if building_face_data is not None:
         parts.append(building_face_data)
     all_face_data = np.concatenate(parts)
@@ -371,7 +515,7 @@ def generate_terrain_stl(
     )
     if integrity["boundary_edges"] > 100000:
         logger.warning("Mesh has high boundary edge count; slicer may still report repairable issues.")
-    if integrity["boundary_edges"] > 400000:
+    if integrity["boundary_edges"] > 400000 and clip_mask is None:
         raise RuntimeError(f"Mesh integrity too low (boundary edges={integrity['boundary_edges']}).")
 
     num_faces = len(all_face_data)

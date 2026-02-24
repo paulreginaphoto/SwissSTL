@@ -6,6 +6,7 @@ import { useTranslation } from "../i18n/I18nContext";
 
 interface MapViewProps {
   onBboxChange: (bbox: BBox | null) => void;
+  onClipPolygon: (poly: number[][] | null) => void;
   isDrawing: boolean;
   setIsDrawing: (v: boolean) => void;
   drawMode: DrawMode;
@@ -50,6 +51,7 @@ function polygonBbox(coords: number[][]): BBox {
 
 export default function MapView({
   onBboxChange,
+  onClipPolygon,
   isDrawing,
   setIsDrawing,
   drawMode,
@@ -58,6 +60,7 @@ export default function MapView({
   const mapRef = useRef<Map | null>(null);
   const drawStartRef = useRef<{ lng: number; lat: number } | null>(null);
   const freehandPointsRef = useRef<number[][]>([]);
+  const lastPolyRef = useRef<number[][] | null>(null);
   const sourceReadyRef = useRef(false);
   const [hasSelection, setHasSelection] = useState(false);
   const drawModeRef = useRef<DrawMode>(drawMode);
@@ -209,10 +212,12 @@ export default function MapView({
 
       if (mode === "rect") {
         bbox = updateRect(map, drawStartRef.current, end);
+        lastPolyRef.current = null;
       } else if (mode === "circle") {
         const coords = circlePolygon(drawStartRef.current, end);
         setSelectionGeometry(map, coords);
         bbox = polygonBbox(coords);
+        lastPolyRef.current = coords;
       } else {
         freehandPointsRef.current.push([end.lng, end.lat]);
         const pts = freehandPointsRef.current;
@@ -220,6 +225,7 @@ export default function MapView({
           const closed = [...pts, pts[0]];
           setSelectionGeometry(map, closed);
           bbox = polygonBbox(pts);
+          lastPolyRef.current = closed;
         }
       }
 
@@ -232,6 +238,7 @@ export default function MapView({
         const dlat = Math.abs(bbox.maxLat - bbox.minLat);
         if (dlng > 0.0005 && dlat > 0.0005) {
           onBboxChange(bbox);
+          onClipPolygon(lastPolyRef.current);
           setHasSelection(true);
         }
       }
@@ -243,7 +250,7 @@ export default function MapView({
       map.remove();
       mapRef.current = null;
     };
-  }, [onBboxChange, setIsDrawing, updateRect, setSelectionGeometry]);
+  }, [onBboxChange, onClipPolygon, setIsDrawing, updateRect, setSelectionGeometry]);
 
   const hintKey = "Shift";
   const hintText =

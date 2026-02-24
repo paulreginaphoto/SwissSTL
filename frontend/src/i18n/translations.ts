@@ -1,9 +1,11 @@
-export type Lang = "fr" | "en" | "de";
+export type Lang = "fr" | "en" | "de" | "it" | "rm";
 
 export const LANG_LABELS: Record<Lang, string> = {
   fr: "Fran\u00e7ais",
   en: "English",
   de: "Deutsch",
+  it: "Italiano",
+  rm: "Rumantsch",
 };
 
 const fr = {
@@ -172,6 +174,112 @@ const de: typeof fr = {
   mapHintRelease: "Loslassen, um die Auswahl zu best\u00e4tigen...",
 };
 
+const it: typeof fr = {
+  appTitle: "SwissSTL",
+  appSubtitle: "Generatore di modelli 3D stampabili della Svizzera",
+
+  zoneTitle: "Zona selezionata",
+  zoneHint: "Tieni premuto Shift + trascina sulla mappa per selezionare una zona.",
+  area: "Superficie",
+  dimensions: "Dimensioni",
+
+  drawMode: "Modalit\u00e0 di selezione",
+  modeRect: "Rettangolo",
+  modeCircle: "Cerchio",
+  modeFreehand: "Mano libera",
+
+  paramsTitle: "Parametri",
+  resolution: "Risoluzione terreno",
+  res05: "0.5m - Dettaglio massimo (LiDAR)",
+  res2: "2m - Alta qualit\u00e0",
+  res10: "10m - Veloce",
+  res05Short: "0.5m (max)",
+  res2Short: "2m",
+  res10Short: "10m (veloce)",
+  zExaggeration: "Esagerazione verticale",
+  baseHeight: "Spessore base",
+  modelWidth: "Larghezza modello",
+  includeBuildings: "Includi edifici 3D",
+  includeRoads: "Includi strade",
+
+  progressTitle: "Progresso",
+  state: "Stato",
+  jobId: "Job ID",
+  elapsed: "Tempo trascorso",
+  noProgress: "Nessun progresso",
+  lastUpdate: "Ultimo aggiornamento",
+  stallWarning: "Nessun progresso da {time}. Il backend sta probabilmente calcolando.",
+  downloadStl: "Scarica STL",
+  downloadZip: "Scarica ZIP ({n} tessere)",
+  connectionLost: "Connessione al server persa",
+
+  gridTitle: "Suddivisione a griglia",
+  gridSingle: "Singolo",
+  gridInfo: "{n}x{n} = {total} tessere STL (ZIP), ogni tessera = {width}mm",
+
+  generating: "Generazione in corso... {pct}%",
+  generate: "Genera STL",
+  selectFirst: "Seleziona prima una zona",
+
+  mapHintRect: "Tieni premuto {key} + trascina per selezionare una zona",
+  mapHintCircle: "Tieni premuto {key} + trascina dal centro per disegnare un cerchio",
+  mapHintFreehand: "Tieni premuto {key} + disegna a mano libera sulla mappa",
+  mapHintRelease: "Rilascia per confermare la selezione...",
+};
+
+const rm: typeof fr = {
+  appTitle: "SwissSTL",
+  appSubtitle: "Generator da models 3D stampabels da la Svizra",
+
+  zoneTitle: "Zona tschernida",
+  zoneHint: "Tegn Shift + tira sin la carta per tscherner ina zona.",
+  area: "Surfatscha",
+  dimensions: "Dimensiuns",
+
+  drawMode: "Modus da selecziun",
+  modeRect: "Rectangul",
+  modeCircle: "Circul",
+  modeFreehand: "Maun libra",
+
+  paramsTitle: "Parameters",
+  resolution: "Resoluziun dal terren",
+  res05: "0.5m - Detagl maximal (LiDAR)",
+  res2: "2m - Auta qualitad",
+  res10: "10m - Spert",
+  res05Short: "0.5m (max)",
+  res2Short: "2m",
+  res10Short: "10m (spert)",
+  zExaggeration: "Exageraziun verticala",
+  baseHeight: "Grossezza da basa",
+  modelWidth: "Largezza dal model",
+  includeBuildings: "Includer edifizis 3D",
+  includeRoads: "Includer vias",
+
+  progressTitle: "Progress",
+  state: "Status",
+  jobId: "Job ID",
+  elapsed: "Temp passà",
+  noProgress: "Nagin progress",
+  lastUpdate: "Ultima actualisaziun",
+  stallWarning: "Nagin progress dapi {time}. Il backend calculescha probablamain.",
+  downloadStl: "Telechargiar STL",
+  downloadZip: "Telechargiar ZIP ({n} plattas)",
+  connectionLost: "Connexiun al server persa",
+
+  gridTitle: "Partiziun en griglia",
+  gridSingle: "Singul",
+  gridInfo: "{n}x{n} = {total} plattas STL (ZIP), mintga platta = {width}mm",
+
+  generating: "Generaziun en cors... {pct}%",
+  generate: "Generar STL",
+  selectFirst: "Tscherna emprim ina zona",
+
+  mapHintRect: "Tegn {key} + tira per tscherner ina zona",
+  mapHintCircle: "Tegn {key} + tira dal center per dissegnar in circul",
+  mapHintFreehand: "Tegn {key} + dissegna a maun libra sin la carta",
+  mapHintRelease: "Slaschà per confermar la selecziun...",
+};
+
 export type TranslationKey = keyof typeof fr;
 
-export const translations: Record<Lang, Record<TranslationKey, string>> = { fr, en, de };
+export const translations: Record<Lang, Record<TranslationKey, string>> = { fr, en, de, it, rm };

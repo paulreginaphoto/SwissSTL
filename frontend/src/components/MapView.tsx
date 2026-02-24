@@ -12,6 +12,7 @@ interface MapViewProps {
   drawMode: DrawMode;
   clearCounter: number;
   flyTarget: { lng: number; lat: number; zoom: number } | null;
+  externalPolygon?: number[][] | null;
 }
 
 const LAUSANNE_CENTER: [number, number] = [6.6323, 46.5197];
@@ -59,6 +60,7 @@ export default function MapView({
   drawMode,
   clearCounter,
   flyTarget,
+  externalPolygon,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
@@ -92,6 +94,26 @@ export default function MapView({
     if (!map) return;
     map.flyTo({ center: [flyTarget.lng, flyTarget.lat], zoom: flyTarget.zoom, duration: 1200 });
   }, [flyTarget]);
+
+  useEffect(() => {
+    if (!externalPolygon || !mapRef.current || !sourceReadyRef.current) return;
+    const map = mapRef.current;
+    const source = map.getSource("selection-rect") as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData({
+        type: "Feature",
+        properties: {},
+        geometry: { type: "Polygon", coordinates: [externalPolygon] },
+      });
+    }
+    setHasSelection(true);
+    const lngs = externalPolygon.map((p) => p[0]);
+    const lats = externalPolygon.map((p) => p[1]);
+    map.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      { padding: 60, duration: 600 },
+    );
+  }, [externalPolygon]);
 
   useEffect(() => {
     if (clearCounter === 0) return;

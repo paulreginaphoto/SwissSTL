@@ -25,6 +25,12 @@ const fr = {
   modeCircle: "Cercle",
   modeFreehand: "Dessin libre",
 
+  // Mask
+  maskTitle: "Masque personnalis\u00e9",
+  uploadMask: "Importer un masque PNG",
+  maskHint: "Forme noire sur fond transparent. S\u00e9lectionnez d'abord une zone.",
+  maskError: "Impossible d'extraire une forme du PNG. V\u00e9rifiez que c'est du noir sur transparent.",
+
   // Parameters
   paramsTitle: "Param\u00e8tres",
   resolution: "R\u00e9solution terrain",
@@ -96,6 +102,11 @@ const en: typeof fr = {
   modeCircle: "Circle",
   modeFreehand: "Freehand",
 
+  maskTitle: "Custom mask",
+  uploadMask: "Upload PNG mask",
+  maskHint: "Black shape on transparent background. Select a zone first.",
+  maskError: "Could not extract a shape from the PNG. Make sure it's black on transparent.",
+
   paramsTitle: "Parameters",
   resolution: "Terrain resolution",
   res05: "0.5m - Maximum detail (LiDAR)",
@@ -159,6 +170,11 @@ const de: typeof fr = {
   modeRect: "Rechteck",
   modeCircle: "Kreis",
   modeFreehand: "Freihand",
+
+  maskTitle: "Benutzerdefinierte Maske",
+  uploadMask: "PNG-Maske hochladen",
+  maskHint: "Schwarze Form auf transparentem Hintergrund. W\u00e4hlen Sie zuerst einen Bereich.",
+  maskError: "Konnte keine Form aus dem PNG extrahieren. Stellen Sie sicher, dass es schwarz auf transparent ist.",
 
   paramsTitle: "Parameter",
   resolution: "Gel\u00e4ndeaufl\u00f6sung",
@@ -224,6 +240,11 @@ const it: typeof fr = {
   modeCircle: "Cerchio",
   modeFreehand: "Mano libera",
 
+  maskTitle: "Maschera personalizzata",
+  uploadMask: "Carica maschera PNG",
+  maskHint: "Forma nera su sfondo trasparente. Seleziona prima una zona.",
+  maskError: "Impossibile estrarre una forma dal PNG. Assicurati che sia nero su trasparente.",
+
   paramsTitle: "Parametri",
   resolution: "Risoluzione terreno",
   res05: "0.5m - Dettaglio massimo (LiDAR)",
@@ -287,6 +308,11 @@ const rm: typeof fr = {
   modeRect: "Rectangul",
   modeCircle: "Circul",
   modeFreehand: "Maun libra",
+
+  maskTitle: "Masca persunalisada",
+  uploadMask: "Chargiar masca PNG",
+  maskHint: "Furma naira sin fund transparent. Tscherna emprim ina zona.",
+  maskError: "Impussibel d'extrair ina furma dal PNG. Controllai ch'i saja nair sin transparent.",
 
   paramsTitle: "Parameters",
   resolution: "Resoluziun dal terren",

@@ -33,6 +33,7 @@ function App() {
   const [clearCounter, setClearCounter] = useState(0);
   const [flyTarget, setFlyTarget] = useState<{ lng: number; lat: number; zoom: number } | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [maskDisplayPoly, setMaskDisplayPoly] = useState<number[][] | null>(null);
 
   const handleBboxChange = useCallback((newBbox: BBox | null) => {
     setBbox(newBbox);
@@ -40,11 +41,18 @@ function App() {
 
   const handleClipPolygon = useCallback((poly: number[][] | null) => {
     setClipPolygon(poly);
+    setMaskDisplayPoly(null);
+  }, []);
+
+  const handleMaskPolygon = useCallback((poly: number[][] | null) => {
+    setClipPolygon(poly);
+    setMaskDisplayPoly(poly);
   }, []);
 
   const handleClearSelection = useCallback(() => {
     setBbox(null);
     setClipPolygon(null);
+    setMaskDisplayPoly(null);
     setClearCounter((c) => c + 1);
   }, []);
 
@@ -70,6 +78,7 @@ function App() {
           setDrawMode={setDrawMode}
           onClearSelection={handleClearSelection}
           onPreviewUrl={setPreviewUrl}
+          onMaskPolygon={handleMaskPolygon}
         />
         <div className="map-wrapper">
           {previewUrl ? (
@@ -87,6 +96,7 @@ function App() {
                 drawMode={drawMode}
                 clearCounter={clearCounter}
                 flyTarget={flyTarget}
+                externalPolygon={maskDisplayPoly}
               />
             </>
           )}

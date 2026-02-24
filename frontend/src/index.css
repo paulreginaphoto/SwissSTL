@@ -793,6 +793,30 @@ input[type="range"]::-webkit-slider-thumb {
   flex-shrink: 0;
 }
 
+.btn-upload-mask {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px dashed var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.btn-upload-mask:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg-secondary);
+}
+
+.btn-upload-mask[aria-disabled="true"] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
 .shortcut-hint {
   font-size: 0.6rem;
   opacity: 0.4;

@@ -38,10 +38,21 @@ export async function extractMaskShape(
   const imageData = ctx.getImageData(0, 0, w, h);
 
   const mask = buildMask(imageData);
+
+  let maskCount = 0;
+  for (let i = 0; i < mask.length; i++) if (mask[i]) maskCount++;
+  console.log(`[mask] ${w}x${h}, foreground pixels: ${maskCount}/${w * h} (${(100 * maskCount / (w * h)).toFixed(1)}%)`);
+  if (maskCount === 0) {
+    console.warn("[mask] No foreground pixels found");
+    return null;
+  }
+
   const contour = traceBoundary(mask, w, h);
+  console.log(`[mask] contour points: ${contour.length}`);
   if (contour.length < 6) return null;
 
   const simplified = douglasPeucker(contour, 0.8);
+  console.log(`[mask] simplified: ${simplified.length} points`);
   if (simplified.length < 3) return null;
 
   const points = simplified.map(([px, py]) => [px / w, py / h]);
@@ -156,6 +167,7 @@ function traceBoundary(mask: Uint8Array, w: number, h: number): number[][] {
   }
   if (sx < 0) return [];
 
+  // 8-connected directions clockwise: E, SE, S, SW, W, NW, N, NE
   const dx = [1, 1, 0, -1, -1, -1, 0, 1];
   const dy = [0, 1, 1, 1, 0, -1, -1, -1];
   const inside = (x: number, y: number) =>
@@ -164,13 +176,15 @@ function traceBoundary(mask: Uint8Array, w: number, h: number): number[][] {
   const result: number[][] = [];
   let bx = sx,
     by = sy;
-  let backDir = 6;
-  const maxIter = w * h * 2;
+  // We arrived by scanning left-to-right, so backtrack direction is W (4)
+  let backDir = 4;
+  const maxIter = w * h * 4;
 
   for (let iter = 0; iter < maxIter; iter++) {
     result.push([bx, by]);
     let found = false;
-    for (let i = 0; i < 8; i++) {
+    // Start checking from (backDir + 1) to skip the backtrack pixel itself
+    for (let i = 1; i <= 8; i++) {
       const d = (backDir + i) % 8;
       const nx = bx + dx[d];
       const ny = by + dy[d];

@@ -90,6 +90,37 @@ npm run dev
 
 Open **http://localhost:5173** in your browser.
 
+### One-Click Launcher (macOS/Linux)
+
+Use the included launcher to install missing dependencies automatically and start both backend + frontend:
+
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+Behavior:
+- Creates `backend/venv` if missing
+- Installs backend dependencies from `backend/requirements.txt` if needed
+- Installs frontend dependencies (`npm install`) if needed
+- Starts backend (`:8000`) and frontend (`:5173`) together
+- Stops both services cleanly on `Ctrl+C`
+
+### One-Click Launcher (Windows / PowerShell)
+
+Use the Windows launcher for the same one-command setup and start:
+
+```powershell
+.\start.ps1
+```
+
+Behavior:
+- Creates `backend\venv` if missing
+- Installs backend dependencies if needed
+- Installs frontend dependencies if needed
+- Starts backend (`:8000`) and frontend (`:5173`) together
+- Stops both services when interrupted
+
 ### Usage
 
 1. Select a **drawing mode** (Rectangle / Circle / Freehand) in the sidebar

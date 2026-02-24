@@ -6,6 +6,7 @@ numpy
 numpy-stl
 trimesh
 scipy
+networkx
 pyproj
 shapely
 geopandas

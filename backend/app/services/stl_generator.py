@@ -1,0 +1,376 @@
+"""
+Generate STL mesh from terrain + optional buildings + optional roads.
+Buildings are expected in LV95/LN02 (same CRS as terrain) — no grounding
+heuristics needed when using DXF source data.
+"""
+
+import logging
+import os
+from typing import Optional
+
+import numpy as np
+import trimesh
+from shapely import contains_xy
+from shapely.geometry import Polygon
+from stl import mesh as stl_mesh
+
+logger = logging.getLogger(__name__)
+
+OUTPUT_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "cache",
+    "output",
+)
+os.makedirs(OUTPUT_DIR, exist_ok=True)
+
+MAX_GRID_DIM = 1200
+
+
+def _build_terrain_faces(xx: np.ndarray, yy: np.ndarray, z: np.ndarray, base_z: float) -> np.ndarray:
+    """Build watertight terrain solid: top + bottom + 4 side walls."""
+    rows, cols = z.shape
+    model_width = float(xx[0, -1])
+    model_height = float(yy[0, 0])
+    faces_list = []
+
+    for r in range(rows - 1):
+        for c in range(cols - 1):
+            faces_list.append(
+                [
+                    [xx[r, c], yy[r, c], z[r, c]],
+                    [xx[r + 1, c], yy[r + 1, c], z[r + 1, c]],
+                    [xx[r, c + 1], yy[r, c + 1], z[r, c + 1]],
+                ]
+            )
+            faces_list.append(
+                [
+                    [xx[r, c + 1], yy[r, c + 1], z[r, c + 1]],
+                    [xx[r + 1, c], yy[r + 1, c], z[r + 1, c]],
+                    [xx[r + 1, c + 1], yy[r + 1, c + 1], z[r + 1, c + 1]],
+                ]
+            )
+
+    faces_list.append([[0, 0, base_z], [0, model_height, base_z], [model_width, 0, base_z]])
+    faces_list.append([[model_width, 0, base_z], [0, model_height, base_z], [model_width, model_height, base_z]])
+
+    for c in range(cols - 1):
+        x0, x1 = xx[0, c], xx[0, c + 1]
+        y0 = yy[0, c]
+        z0, z1 = z[0, c], z[0, c + 1]
+        faces_list.append([[x0, y0, z0], [x1, y0, z1], [x0, y0, base_z]])
+        faces_list.append([[x1, y0, z1], [x1, y0, base_z], [x0, y0, base_z]])
+
+    r = rows - 1
+    for c in range(cols - 1):
+        x0, x1 = xx[r, c], xx[r, c + 1]
+        y0 = yy[r, c]
+        z0, z1 = z[r, c], z[r, c + 1]
+        faces_list.append([[x0, y0, z0], [x0, y0, base_z], [x1, y0, z1]])
+        faces_list.append([[x1, y0, z1], [x0, y0, base_z], [x1, y0, base_z]])
+
+    for r in range(rows - 1):
+        x0 = xx[r, 0]
+        y0, y1 = yy[r, 0], yy[r + 1, 0]
+        z0, z1 = z[r, 0], z[r + 1, 0]
+        faces_list.append([[x0, y0, z0], [x0, y0, base_z], [x0, y1, z1]])
+        faces_list.append([[x0, y1, z1], [x0, y1, base_z], [x0, y0, base_z]])
+
+    c = cols - 1
+    for r in range(rows - 1):
+        x0 = xx[r, c]
+        y0, y1 = yy[r, c], yy[r + 1, c]
+        z0, z1 = z[r, c], z[r + 1, c]
+        faces_list.append([[x0, y0, z0], [x0, y1, z1], [x0, y0, base_z]])
+        faces_list.append([[x0, y1, z1], [x0, y1, base_z], [x0, y0, base_z]])
+
+    return np.array(faces_list, dtype=np.float32)
+
+
+def _repair_building_mesh(verts_mm: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Repair building mesh: fix normals, remove degenerate/duplicate faces."""
+    logger.info(f"Repairing building mesh: {len(verts_mm)} verts, {len(faces)} faces...")
+    mesh = trimesh.Trimesh(vertices=verts_mm.astype(np.float64), faces=faces.astype(np.int32), process=False)
+    initial_faces = len(mesh.faces)
+
+    trimesh.repair.fix_normals(mesh, multibody=True)
+    trimesh.repair.fix_inversion(mesh, multibody=True)
+
+    nondegen = mesh.nondegenerate_faces()
+    if not nondegen.all():
+        mesh.update_faces(nondegen)
+    unique = mesh.unique_faces()
+    if len(unique) < len(mesh.faces):
+        mesh.update_faces(unique)
+    mesh.merge_vertices()
+    nondegen2 = mesh.nondegenerate_faces()
+    if not nondegen2.all():
+        mesh.update_faces(nondegen2)
+
+    logger.info(
+        f"After building repair: {len(mesh.faces)} faces (from {initial_faces}), "
+        f"{len(mesh.vertices)} verts, watertight={mesh.is_watertight}"
+    )
+
+    out = np.zeros((len(mesh.faces), 3, 3), dtype=np.float32)
+    verts = np.asarray(mesh.vertices, dtype=np.float32)
+    for i, f in enumerate(mesh.faces):
+        out[i, 0] = verts[f[0]]
+        out[i, 1] = verts[f[1]]
+        out[i, 2] = verts[f[2]]
+    return out
+
+
+def _apply_road_emboss(
+    z: np.ndarray,
+    road_polygons_lv95: list,
+    terrain_lv95_bbox: tuple,
+    road_raise_mm: float = 0.15,
+) -> np.ndarray:
+    """Emboss roads directly into terrain height grid (manifold-safe)."""
+    if not road_polygons_lv95:
+        return z
+
+    rows, cols = z.shape
+    target_cells = 1_200_000
+    stride = int(np.ceil(np.sqrt((rows * cols) / target_cells))) if rows * cols > target_cells else 1
+
+    if stride > 1:
+        work_rows = int(np.ceil(rows / stride))
+        work_cols = int(np.ceil(cols / stride))
+    else:
+        work_rows, work_cols = rows, cols
+    min_e, min_n, max_e, max_n = terrain_lv95_bbox
+    lv95_width = max_e - min_e
+    lv95_height = max_n - min_n
+    e_coords = np.linspace(min_e, max_e, work_cols, dtype=np.float64)
+    n_coords = np.linspace(max_n, min_n, work_rows, dtype=np.float64)
+
+    road_mask_work = np.zeros((work_rows, work_cols), dtype=bool)
+    applied = 0
+
+    for coords, _road_type in road_polygons_lv95:
+        arr = np.asarray(coords, dtype=np.float64)
+        if arr.shape[0] < 3:
+            continue
+        poly = Polygon(arr[:, :2])
+        if poly.is_empty or not poly.is_valid:
+            continue
+
+        pmin_e, pmin_n, pmax_e, pmax_n = poly.bounds
+        c0 = int(np.floor((pmin_e - min_e) / lv95_width * (work_cols - 1)))
+        c1 = int(np.ceil((pmax_e - min_e) / lv95_width * (work_cols - 1)))
+        r0 = int(np.floor((1.0 - (pmax_n - min_n) / lv95_height) * (work_rows - 1)))
+        r1 = int(np.ceil((1.0 - (pmin_n - min_n) / lv95_height) * (work_rows - 1)))
+        c0 = max(0, min(work_cols - 1, c0))
+        c1 = max(0, min(work_cols - 1, c1))
+        r0 = max(0, min(work_rows - 1, r0))
+        r1 = max(0, min(work_rows - 1, r1))
+        if c1 < c0 or r1 < r0:
+            continue
+
+        ee, nn = np.meshgrid(e_coords[c0 : c1 + 1], n_coords[r0 : r1 + 1])
+        inside = contains_xy(poly, ee, nn)
+        if np.any(inside):
+            road_mask_work[r0 : r1 + 1, c0 : c1 + 1] |= inside
+            applied += 1
+
+    if stride > 1:
+        road_mask = np.repeat(np.repeat(road_mask_work, stride, axis=0), stride, axis=1)[:rows, :cols]
+    else:
+        road_mask = road_mask_work
+
+    if np.any(road_mask):
+        z = z.copy()
+        z[road_mask] += road_raise_mm
+    logger.info(
+        f"Road emboss: {road_mask.sum()} cells updated from {applied} polygons "
+        f"(stride={stride}, work_grid={work_rows}x{work_cols})"
+    )
+    return z
+
+
+def _fix_normals_global(all_face_data: np.ndarray) -> np.ndarray:
+    """Global orientation/cleanup pass after merging all parts."""
+    n_faces = len(all_face_data)
+    all_verts = all_face_data.reshape(-1, 3).astype(np.float64)
+    all_faces_idx = np.arange(3 * n_faces, dtype=np.int32).reshape(n_faces, 3)
+    mesh = trimesh.Trimesh(vertices=all_verts, faces=all_faces_idx, process=False)
+    mesh.merge_vertices()
+    trimesh.repair.fix_normals(mesh, multibody=True)
+    nondegen = mesh.nondegenerate_faces()
+    if not nondegen.all():
+        mesh.update_faces(nondegen)
+
+    out = np.zeros((len(mesh.faces), 3, 3), dtype=np.float32)
+    verts = np.asarray(mesh.vertices, dtype=np.float32)
+    for i, f in enumerate(mesh.faces):
+        out[i, 0] = verts[f[0]]
+        out[i, 1] = verts[f[1]]
+        out[i, 2] = verts[f[2]]
+    return out
+
+
+def _mesh_integrity_metrics(face_data: np.ndarray) -> dict:
+    """Compute final STL integrity metrics."""
+    verts = face_data.reshape(-1, 3).astype(np.float64)
+    faces_idx = np.arange(len(face_data) * 3, dtype=np.int32).reshape(-1, 3)
+    mesh = trimesh.Trimesh(vertices=verts, faces=faces_idx, process=False)
+    mesh.merge_vertices()
+
+    eui = mesh.edges_unique_inverse
+    edge_use = np.bincount(eui, minlength=len(mesh.edges_unique))
+    boundary_edges = int(np.sum(edge_use == 1))
+
+    nondeg = mesh.nondegenerate_faces()
+    deg_faces = int((~nondeg).sum())
+    comp_count = len(mesh.split(only_watertight=False))
+    return {
+        "faces": int(len(mesh.faces)),
+        "verts": int(len(mesh.vertices)),
+        "watertight": bool(mesh.is_watertight),
+        "boundary_edges": boundary_edges,
+        "degenerate_faces": deg_faces,
+        "components": int(comp_count),
+    }
+
+
+def generate_terrain_stl(
+    elevation: np.ndarray,
+    job_id: str,
+    model_width_mm: float = 150.0,
+    z_exaggeration: float = 1.0,
+    base_height_mm: float = 3.0,
+    building_verts_lv95: Optional[np.ndarray] = None,
+    building_faces: Optional[np.ndarray] = None,
+    terrain_lv95_bbox: Optional[tuple] = None,
+    road_polygons_lv95: Optional[list] = None,
+    on_progress=None,
+) -> str:
+    """Convert terrain + optional buildings + roads into a single STL file.
+
+    Buildings are expected in LV95/LN02 (same CRS as the terrain elevation grid).
+    The conversion to model coordinates (mm) uses the same formula for both
+    terrain and buildings: subtract min_elev, multiply by z_scale.
+    """
+    rows, cols = elevation.shape
+    logger.info(f"Generating STL: {rows}x{cols} grid, {model_width_mm}mm target width")
+
+    if max(rows, cols) > MAX_GRID_DIM:
+        step = int(np.ceil(max(rows, cols) / MAX_GRID_DIM))
+        elevation = elevation[::step, ::step]
+        rows, cols = elevation.shape
+        logger.info(f"Downsampled to {rows}x{cols} (step={step})")
+
+    if terrain_lv95_bbox:
+        min_e, min_n, max_e, max_n = terrain_lv95_bbox
+        lv95_width = max_e - min_e
+        lv95_height = max_n - min_n
+    else:
+        min_e = min_n = 0.0
+        max_e = float(cols * 2.0)
+        max_n = float(rows * 2.0)
+        lv95_width = max_e - min_e
+        lv95_height = max_n - min_n
+
+    horizontal_scale = model_width_mm / lv95_width
+    height_mm = lv95_height * horizontal_scale
+    z_scale = horizontal_scale * z_exaggeration
+
+    min_elev = float(np.nanmin(elevation))
+    z = (elevation - min_elev) * z_scale
+    z = np.nan_to_num(z, nan=0.0).astype(np.float32)
+
+    if road_polygons_lv95 and terrain_lv95_bbox:
+        z = _apply_road_emboss(z, road_polygons_lv95, terrain_lv95_bbox, road_raise_mm=0.15)
+
+    base_z = -base_height_mm
+    x = np.linspace(0, model_width_mm, cols, dtype=np.float32)
+    y = np.linspace(0, height_mm, rows, dtype=np.float32)[::-1]
+    xx, yy = np.meshgrid(x, y)
+
+    logger.info(
+        f"Model: {model_width_mm:.1f}x{height_mm:.1f}mm, "
+        f"z_scale={z_scale:.4f} mm/m (exag={z_exaggeration}x), relief={z.max():.1f}mm"
+    )
+    if on_progress:
+        on_progress(60)
+
+    terrain_faces = _build_terrain_faces(xx, yy, z, base_z)
+    logger.info(f"Terrain: {len(terrain_faces)} faces")
+    if on_progress:
+        on_progress(75)
+
+    # --- Buildings: same CRS as terrain, direct coordinate mapping ---
+    building_face_data = None
+    if (
+        building_verts_lv95 is not None
+        and len(building_verts_lv95) > 0
+        and building_faces is not None
+        and len(building_faces) > 0
+        and terrain_lv95_bbox is not None
+    ):
+        logger.info(f"Processing {len(building_verts_lv95)} building vertices (DXF/LV95)...")
+        bv = building_verts_lv95.astype(np.float64, copy=True)
+        bf_arr = building_faces.astype(np.int32, copy=False)
+
+        bx = (bv[:, 0] - min_e) / lv95_width * model_width_mm
+        by = (bv[:, 1] - min_n) / lv95_height * height_mm
+        bz = (bv[:, 2] - min_elev) * z_scale
+
+        margin = 0.5
+        in_bounds = (
+            (bx >= -margin) & (bx <= model_width_mm + margin)
+            & (by >= -margin) & (by <= height_mm + margin)
+        )
+
+        face_keep = in_bounds[bf_arr[:, 0]] & in_bounds[bf_arr[:, 1]] & in_bounds[bf_arr[:, 2]]
+        valid_faces = bf_arr[face_keep]
+
+        logger.info(f"Buildings: faces_kept={len(valid_faces)}/{len(bf_arr)}")
+
+        if len(valid_faces) > 0:
+            building_verts_mm = np.column_stack([bx, by, bz]).astype(np.float32)
+            used_verts = np.unique(valid_faces.ravel())
+            remap = np.full(len(building_verts_mm), -1, dtype=np.int32)
+            remap[used_verts] = np.arange(len(used_verts), dtype=np.int32)
+            compact_verts = building_verts_mm[used_verts]
+            compact_faces = remap[valid_faces]
+            building_face_data = _repair_building_mesh(compact_verts, compact_faces)
+        else:
+            logger.warning("No building faces within model bounds")
+
+    if on_progress:
+        on_progress(85)
+
+    parts = [terrain_faces]
+    if building_face_data is not None:
+        parts.append(building_face_data)
+    all_face_data = np.concatenate(parts)
+
+    all_face_data = _fix_normals_global(all_face_data)
+    integrity = _mesh_integrity_metrics(all_face_data)
+    logger.info(
+        "Mesh integrity: "
+        f"watertight={integrity['watertight']} "
+        f"boundary_edges={integrity['boundary_edges']} "
+        f"degenerate_faces={integrity['degenerate_faces']} "
+        f"components={integrity['components']}"
+    )
+    if integrity["boundary_edges"] > 100000:
+        logger.warning("Mesh has high boundary edge count; slicer may still report repairable issues.")
+    if integrity["boundary_edges"] > 400000:
+        raise RuntimeError(f"Mesh integrity too low (boundary edges={integrity['boundary_edges']}).")
+
+    num_faces = len(all_face_data)
+    result_mesh = stl_mesh.Mesh(np.zeros(num_faces, dtype=stl_mesh.Mesh.dtype))
+    result_mesh.vectors = all_face_data  # pyright: ignore[reportAttributeAccessIssue]
+    result_mesh.update_normals()  # pyright: ignore[reportAttributeAccessIssue]
+
+    if on_progress:
+        on_progress(95)
+
+    output_path = os.path.join(OUTPUT_DIR, f"{job_id}.stl")
+    result_mesh.save(output_path)  # pyright: ignore[reportAttributeAccessIssue]
+    file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
+    logger.info(f"STL saved: {output_path} ({file_size_mb:.1f} MB, {num_faces} faces)")
+    return output_path

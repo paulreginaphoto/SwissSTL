@@ -1,0 +1,10 @@
+{
+  "venvPath": "backend",
+  "venv": "venv",
+  "executionEnvironments": [
+    {
+      "root": "backend",
+      "venv": "venv"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+fastapi
+uvicorn[standard]
+httpx
+rasterio
+numpy
+numpy-stl
+trimesh
+pyproj
+shapely
+geopandas
+fiona
+lxml
+pydantic
+python-multipart
+aiofiles
+ezdxf

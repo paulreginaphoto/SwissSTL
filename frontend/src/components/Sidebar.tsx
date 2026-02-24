@@ -10,6 +10,8 @@ interface SidebarProps {
   clipPolygon: number[][] | null;
   drawMode: DrawMode;
   setDrawMode: (mode: DrawMode) => void;
+  onClearSelection: () => void;
+  onPreviewUrl: (url: string | null) => void;
 }
 
 interface JobState {
@@ -35,7 +37,7 @@ function estimateArea(bbox: BBox): string {
   const h = dLat * R;
   const w = dLon * R * Math.cos(midLat);
   const area = h * w;
-  if (area < 1) return `${(area * 1e6).toFixed(0)} m\u00B2`;
+  if (area < 1) return `${Math.round(area * 1e6).toLocaleString()} m\u00B2`;
   return `${area.toFixed(2)} km\u00B2`;
 }
 
@@ -50,7 +52,7 @@ function estimateDimensions(bbox: BBox): { widthKm: number; heightKm: number } {
   };
 }
 
-export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: SidebarProps) {
+export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode, onClearSelection, onPreviewUrl }: SidebarProps) {
   const { t, lang, setLang } = useTranslation();
 
   const [options, setOptions] = useState<GenerateOptions>({
@@ -62,6 +64,19 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
     modelWidthMm: 150,
   });
   const [gridSplit, setGridSplit] = useState(1);
+  const [showHistory, setShowHistory] = useState(false);
+
+  interface HistoryEntry { name: string; url: string; date: string }
+  const [history, setHistory] = useState<HistoryEntry[]>(() => {
+    try { return JSON.parse(localStorage.getItem("swissstl-history") || "[]"); } catch { return []; }
+  });
+  const saveHistory = (entry: HistoryEntry) => {
+    setHistory((prev) => {
+      const next = [entry, ...prev.filter((h) => h.url !== entry.url)].slice(0, 10);
+      localStorage.setItem("swissstl-history", JSON.stringify(next));
+      return next;
+    });
+  };
 
   const [job, setJob] = useState<JobState | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -119,6 +134,16 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
         setJob(nextJob);
         if (data.status === "completed" || data.status === "failed") {
           stopPolling();
+          if (data.status === "completed" && data.download_url) {
+            saveHistory({
+              name: data.download_url.split("/").pop() || data.job_id,
+              url: data.download_url,
+              date: new Date().toLocaleString(),
+            });
+            if (!data.download_url.endsWith(".zip")) {
+              onPreviewUrl(`${API_BASE}${data.download_url}`);
+            }
+          }
         }
       } catch {
         stopPolling();
@@ -192,6 +217,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
   };
 
   const isProcessing = job && !["completed", "failed"].includes(job.status);
+  const isCompleted = job?.status === "completed" && !!job.downloadUrl;
   const now = Date.now();
   const elapsedSec = startedAt ? Math.floor((now - startedAt) / 1000) : 0;
   const stalledSec = lastProgressAt ? Math.floor((now - lastProgressAt) / 1000) : 0;
@@ -202,6 +228,16 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
       : options.resolution === "2"
         ? t("res2Short")
         : t("res10Short");
+
+  const handleNewGeneration = () => {
+    setJob(null);
+    setEvents([]);
+    setError(null);
+    setStartedAt(null);
+    setLastUpdateAt(null);
+    setLastProgressAt(null);
+    onPreviewUrl(null);
+  };
 
   return (
     <div className="sidebar">
@@ -234,8 +270,35 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
         <p>{t("appSubtitle")}</p>
       </div>
 
+      {isCompleted && (
+        <div className="download-overlay">
+          <div className="download-overlay-content">
+            <div className="download-check">&#10003;</div>
+            <p className="download-filename">{job!.downloadUrl!.split("/").pop()}</p>
+            <button className="btn-download-hero" onClick={handleDownload}>
+              {job!.downloadUrl!.endsWith(".zip") ? t("downloadZip") : t("downloadStl")}
+            </button>
+            <button className="btn-new-generation" onClick={handleNewGeneration}>
+              {t("generateAnother")}
+            </button>
+            <p className="download-elapsed">
+              {t("elapsed")}: {formatSeconds(elapsedSec)}
+            </p>
+          </div>
+        </div>
+      )}
+
+      <div className={`sidebar-body ${isCompleted ? "dimmed" : ""}`}>
+
       <div className="sidebar-section">
-        <h2>{t("zoneTitle")}</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <h2 style={{ margin: 0 }}>{t("zoneTitle")}</h2>
+          {bbox && !isProcessing && (
+            <button className="btn-clear" onClick={onClearSelection} title={t("clearSelection")}>
+              ✕
+            </button>
+          )}
+        </div>
         {bbox ? (
           <div className="info-grid">
             <div className="info-item">
@@ -251,13 +314,13 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
             <div className="info-item">
               <label>Lon</label>
               <span>
-                {bbox.minLon.toFixed(4)}...{bbox.maxLon.toFixed(4)}
+                {bbox.minLon.toFixed(3)}...{bbox.maxLon.toFixed(3)}
               </span>
             </div>
             <div className="info-item">
               <label>Lat</label>
               <span>
-                {bbox.minLat.toFixed(4)}...{bbox.maxLat.toFixed(4)}
+                {bbox.minLat.toFixed(3)}...{bbox.maxLat.toFixed(3)}
               </span>
             </div>
           </div>
@@ -279,6 +342,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
               disabled={!!isProcessing}
             >
               {mode === "rect" ? t("modeRect") : mode === "circle" ? t("modeCircle") : t("modeFreehand")}
+              <kbd className="shortcut-hint">{mode === "rect" ? "R" : mode === "circle" ? "C" : "F"}</kbd>
             </button>
           ))}
         </div>
@@ -311,6 +375,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
         <div className="form-group">
           <label>
             {t("resolution")}
+            <span className="tooltip-wrap">?<span className="tooltip-text">{t("tipResolution")}</span></span>
             <span className="range-value">{resLabel}</span>
           </label>
           <select
@@ -329,6 +394,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
         <div className="form-group">
           <label>
             {t("baseHeight")}
+            <span className="tooltip-wrap">?<span className="tooltip-text">{t("tipBaseHeight")}</span></span>
             <span className="range-value">{options.baseHeight.toFixed(1)} mm</span>
           </label>
           <input
@@ -350,6 +416,7 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
         <div className="form-group">
           <label>
             {t("modelWidth")}
+            <span className="tooltip-wrap">?<span className="tooltip-text">{t("tipModelWidth")}</span></span>
             <span className="range-value">{options.modelWidthMm.toFixed(0)} mm</span>
           </label>
           <input
@@ -400,13 +467,18 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
           <h2>{t("progressTitle")}</h2>
           <div className="progress-bar-container">
             <div
-              className="progress-bar-fill"
+              className={`progress-bar-fill ${isProcessing ? "active" : ""}`}
               style={{ width: `${job.progress}%` }}
             />
           </div>
           <p className="progress-text">
             {job.message} ({job.progress.toFixed(1)}%)
           </p>
+          {isProcessing && job.progress > 5 && elapsedSec > 3 && (
+            <p className="progress-eta">
+              ~{formatSeconds(Math.round(elapsedSec / job.progress * (100 - job.progress)))} {t("etaRemaining")}
+            </p>
+          )}
           <div className="progress-debug">
             <div className="progress-debug-row">
               <span>{t("state")}</span>
@@ -445,11 +517,6 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
               ))}
             </div>
           )}
-          {job.status === "completed" && job.downloadUrl && (
-            <button className="btn-download" onClick={handleDownload}>
-              {job.downloadUrl.endsWith(".zip") ? t("downloadZip") : t("downloadStl")}
-            </button>
-          )}
           {job.status === "failed" && (
             <p className="error-text">{job.message}</p>
           )}
@@ -463,6 +530,43 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
       )}
 
       <div className="sidebar-section" style={{ borderBottom: "none" }}>
+        {bbox && !isProcessing && !isCompleted && (() => {
+          const areaKm2 = (() => {
+            const R = 6371;
+            const dLat = ((bbox.maxLat - bbox.minLat) * Math.PI) / 180;
+            const dLon = ((bbox.maxLon - bbox.minLon) * Math.PI) / 180;
+            const midLat = ((bbox.minLat + bbox.maxLat) / 2 * Math.PI) / 180;
+            return dLat * R * dLon * R * Math.cos(midLat);
+          })();
+          const res = parseFloat(options.resolution);
+          const gridCells = Math.round(areaKm2 * 1e6 / (res * res));
+          const baseMb = gridCells * 0.0001;
+          const buildingFactor = options.includeBuildings ? 1.8 : 1.0;
+          const sizeMb = baseMb * buildingFactor * gridSplit * gridSplit;
+          const timeMin = areaKm2 < 0.5 ? 0.1 : (areaKm2 * (res < 1 ? 4 : res < 5 ? 1.5 : 0.5) * buildingFactor);
+
+          const showWarn = (areaKm2 > 5 && res <= 0.5) || (areaKm2 > 25 && res <= 2);
+          const showHugeWarn = (areaKm2 > 25 && res <= 0.5) || (areaKm2 > 50 && res <= 2);
+
+          return (
+            <>
+              {showHugeWarn && (
+                <p className="resolution-warning huge">
+                  {t("warnHugeZone", { area: areaKm2.toFixed(1), res: options.resolution, time: Math.ceil(timeMin).toString() })}
+                </p>
+              )}
+              {!showHugeWarn && showWarn && (
+                <p className="resolution-warning">
+                  {t("warnLargeZone", { area: areaKm2.toFixed(1), res: options.resolution, time: Math.ceil(timeMin).toString() })}
+                </p>
+              )}
+              <div className="pre-estimate">
+                <span>~{sizeMb < 1 ? `${(sizeMb * 1024).toFixed(0)} KB` : `${sizeMb.toFixed(0)} MB`}</span>
+                <span>~{timeMin < 1 ? "<1 min" : `${Math.ceil(timeMin)} min`}</span>
+              </div>
+            </>
+          );
+        })()}
         <button
           className="btn-generate"
           disabled={!bbox || !!isProcessing}
@@ -475,6 +579,30 @@ export default function Sidebar({ bbox, clipPolygon, drawMode, setDrawMode }: Si
               : t("selectFirst")}
         </button>
       </div>
+
+      {history.length > 0 && (
+        <div className="sidebar-section">
+          <div
+            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+            onClick={() => setShowHistory((v) => !v)}
+          >
+            <h2 style={{ margin: 0 }}>{t("historyTitle")} ({history.length})</h2>
+            <span style={{ fontSize: "0.75rem", color: "var(--color-text-muted)" }}>{showHistory ? "▲" : "▼"}</span>
+          </div>
+          {showHistory && (
+            <ul className="history-list">
+              {history.map((h, i) => (
+                <li key={i} className="history-item">
+                  <a href={`${API_BASE}${h.url}`} target="_blank" rel="noreferrer">{h.name}</a>
+                  <span className="history-date">{h.date}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      </div>{/* end sidebar-body */}
     </div>
   );
 }

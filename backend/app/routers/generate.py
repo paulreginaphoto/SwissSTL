@@ -73,8 +73,6 @@ router = APIRouter()
 jobs: dict[str, JobResponse] = {}
 
 MAX_AREA_KM2 = 100.0
-AUTO_10M_AREA_KM2 = 25.0
-AUTO_2M_AREA_KM2 = 5.0
 
 
 def _split_bbox_grid(
@@ -98,24 +96,11 @@ def _split_bbox_grid(
     return tiles
 
 
-def _effective_resolution(area_km2: float, requested: str) -> str:
-    """Auto-adjust resolution based on area for single-tile mode."""
-    if area_km2 > AUTO_10M_AREA_KM2 and requested != "10":
-        return "10"
-    if area_km2 > AUTO_2M_AREA_KM2 and requested == "0.5":
-        return "2"
-    return requested
-
-
 async def _generate_single(job_id: str, request: GenerateRequest, job: JobResponse):
     """Standard single-tile generation pipeline."""
     bbox = request.bbox
     area_km2 = estimate_area_km2(bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat)
-    resolution = _effective_resolution(area_km2, request.resolution.value)
-
-    if resolution != request.resolution.value:
-        logger.info(f"Area={area_km2:.1f}km² — forcing {resolution}m (was {request.resolution.value}m)")
-        job.message = f"Zone large ({area_km2:.1f} km²) — resolution forcée à {resolution}m"
+    resolution = request.resolution.value
 
     logger.info(
         f"Job {job_id} | area={area_km2:.1f}km² res={resolution}m "
@@ -200,14 +185,6 @@ async def _generate_grid(job_id: str, request: GenerateRequest, job: JobResponse
     total_area = estimate_area_km2(bbox.min_lon, bbox.min_lat, bbox.max_lon, bbox.max_lat)
     tile_area = total_area / (n * n)
     resolution = request.resolution.value
-
-    if tile_area > AUTO_10M_AREA_KM2 and resolution != "10":
-        resolution = "10"
-        job.message = f"Tuiles trop grandes ({tile_area:.1f} km²/tuile) — resolution forcée à 10m"
-    elif tile_area > AUTO_2M_AREA_KM2 and resolution == "0.5":
-        resolution = "2"
-        job.message = f"Tuiles trop grandes ({tile_area:.1f} km²/tuile) — resolution forcée à 2m"
-
     total_tiles = n * n
     logger.info(
         f"Job {job_id} GRID {n}x{n} ({total_tiles} tiles) | "

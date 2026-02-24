@@ -1,8 +1,11 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, lazy, Suspense } from "react";
 import { I18nProvider } from "./i18n/I18nContext";
 import MapView from "./components/MapView";
+import SearchBar from "./components/SearchBar";
 import Sidebar from "./components/Sidebar";
 import "./index.css";
+
+const StlPreview = lazy(() => import("./components/StlPreview"));
 
 export interface BBox {
   minLon: number;
@@ -27,6 +30,9 @@ function App() {
   const [clipPolygon, setClipPolygon] = useState<number[][] | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [drawMode, setDrawMode] = useState<DrawMode>("rect");
+  const [clearCounter, setClearCounter] = useState(0);
+  const [flyTarget, setFlyTarget] = useState<{ lng: number; lat: number; zoom: number } | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const handleBboxChange = useCallback((newBbox: BBox | null) => {
     setBbox(newBbox);
@@ -34,6 +40,24 @@ function App() {
 
   const handleClipPolygon = useCallback((poly: number[][] | null) => {
     setClipPolygon(poly);
+  }, []);
+
+  const handleClearSelection = useCallback(() => {
+    setBbox(null);
+    setClipPolygon(null);
+    setClearCounter((c) => c + 1);
+  }, []);
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "r" || e.key === "R") setDrawMode("rect");
+      else if (e.key === "c" || e.key === "C") setDrawMode("circle");
+      else if (e.key === "f" || e.key === "F") setDrawMode("freehand");
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   return (
@@ -44,14 +68,29 @@ function App() {
           clipPolygon={clipPolygon}
           drawMode={drawMode}
           setDrawMode={setDrawMode}
+          onClearSelection={handleClearSelection}
+          onPreviewUrl={setPreviewUrl}
         />
-        <MapView
-          onBboxChange={handleBboxChange}
-          onClipPolygon={handleClipPolygon}
-          isDrawing={isDrawing}
-          setIsDrawing={setIsDrawing}
-          drawMode={drawMode}
-        />
+        <div className="map-wrapper">
+          {previewUrl ? (
+            <Suspense fallback={<div className="preview-loading">Chargement du modèle 3D...</div>}>
+              <StlPreview url={previewUrl} fullscreen />
+            </Suspense>
+          ) : (
+            <>
+              <SearchBar onSelect={(lng, lat, zoom) => setFlyTarget({ lng, lat, zoom })} />
+              <MapView
+                onBboxChange={handleBboxChange}
+                onClipPolygon={handleClipPolygon}
+                isDrawing={isDrawing}
+                setIsDrawing={setIsDrawing}
+                drawMode={drawMode}
+                clearCounter={clearCounter}
+                flyTarget={flyTarget}
+              />
+            </>
+          )}
+        </div>
       </div>
     </I18nProvider>
   );

@@ -29,7 +29,7 @@ os.makedirs(CACHE_DIR, exist_ok=True)
 WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
 LV95_TO_WGS84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 
-DOWNLOAD_SEMAPHORE = asyncio.Semaphore(6)
+DOWNLOAD_SEMAPHORE = asyncio.Semaphore(10)
 
 
 def wgs84_to_lv95_bbox(min_lon: float, min_lat: float, max_lon: float, max_lat: float):

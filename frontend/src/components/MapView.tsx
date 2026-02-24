@@ -10,6 +10,8 @@ interface MapViewProps {
   isDrawing: boolean;
   setIsDrawing: (v: boolean) => void;
   drawMode: DrawMode;
+  clearCounter: number;
+  flyTarget: { lng: number; lat: number; zoom: number } | null;
 }
 
 const LAUSANNE_CENTER: [number, number] = [6.6323, 46.5197];
@@ -55,9 +57,12 @@ export default function MapView({
   isDrawing,
   setIsDrawing,
   drawMode,
+  clearCounter,
+  flyTarget,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<Map | null>(null);
+  const [isSatellite, setIsSatellite] = useState(false);
   const drawStartRef = useRef<{ lng: number; lat: number } | null>(null);
   const freehandPointsRef = useRef<number[][]>([]);
   const lastPolyRef = useRef<number[][] | null>(null);
@@ -69,6 +74,35 @@ export default function MapView({
   useEffect(() => {
     drawModeRef.current = drawMode;
   }, [drawMode]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const src = map.getSource("swisstopo") as maplibregl.RasterTileSource | undefined;
+    if (!src) return;
+    const tileUrl = isSatellite
+      ? "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg"
+      : "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
+    (src as any).setTiles([tileUrl]);
+  }, [isSatellite]);
+
+  useEffect(() => {
+    if (!flyTarget) return;
+    const map = mapRef.current;
+    if (!map) return;
+    map.flyTo({ center: [flyTarget.lng, flyTarget.lat], zoom: flyTarget.zoom, duration: 1200 });
+  }, [flyTarget]);
+
+  useEffect(() => {
+    if (clearCounter === 0) return;
+    const map = mapRef.current;
+    if (!map) return;
+    const source = map.getSource("selection-rect") as maplibregl.GeoJSONSource | undefined;
+    if (source) {
+      source.setData({ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: [[]] } });
+    }
+    setHasSelection(false);
+  }, [clearCounter]);
 
   const setSelectionGeometry = useCallback(
     (map: Map, coords: number[][]) => {
@@ -240,6 +274,10 @@ export default function MapView({
           onBboxChange(bbox);
           onClipPolygon(lastPolyRef.current);
           setHasSelection(true);
+          map.fitBounds(
+            [[bbox.minLon, bbox.minLat], [bbox.maxLon, bbox.maxLat]],
+            { padding: 60, duration: 600 },
+          );
         }
       }
     });
@@ -273,6 +311,17 @@ export default function MapView({
           {t("mapHintRelease")}
         </div>
       )}
+      <button
+        className="map-style-toggle"
+        onClick={() => setIsSatellite((v) => !v)}
+        title={isSatellite ? "Carte" : "Satellite"}
+      >
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+          <polygon points="12 2 22 8.5 12 15 2 8.5" />
+          <polyline points="2 12 12 18.5 22 12" />
+          <polyline points="2 15.5 12 22 22 15.5" />
+        </svg>
+      </button>
     </div>
   );
 }

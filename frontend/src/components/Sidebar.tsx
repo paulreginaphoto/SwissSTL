@@ -53,9 +53,9 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
   const { t, lang, setLang } = useTranslation();
 
   const [options, setOptions] = useState<GenerateOptions>({
-    resolution: "2",
+    resolution: "0.5",
     zExaggeration: 1.0,
-    baseHeight: 3,
+    baseHeight: 0.5,
     includeBuildings: true,
     includeRoads: true,
     modelWidthMm: 150,
@@ -319,27 +319,6 @@ export default function Sidebar({ bbox, drawMode, setDrawMode }: SidebarProps) {
             <option value="2">{t("res2")}</option>
             <option value="10">{t("res10")}</option>
           </select>
-        </div>
-
-        <div className="form-group">
-          <label>
-            {t("zExaggeration")}
-            <span className="range-value">{options.zExaggeration.toFixed(1)}x</span>
-          </label>
-          <input
-            type="range"
-            min="0.5"
-            max="5"
-            step="0.1"
-            value={options.zExaggeration}
-            disabled={!!isProcessing}
-            onChange={(e) =>
-              setOptions({
-                ...options,
-                zExaggeration: parseFloat(e.target.value),
-              })
-            }
-          />
         </div>
 
         <div className="form-group">

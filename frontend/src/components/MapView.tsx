@@ -22,14 +22,15 @@ function circlePolygon(
   end: { lng: number; lat: number },
   n = 48,
 ): number[][] {
-  const dlng = end.lng - center.lng;
+  const cosLat = Math.cos((center.lat * Math.PI) / 180);
+  const dlng = (end.lng - center.lng) * cosLat;
   const dlat = end.lat - center.lat;
   const r = Math.sqrt(dlng * dlng + dlat * dlat);
   const coords: number[][] = [];
   for (let i = 0; i <= n; i++) {
     const angle = (2 * Math.PI * i) / n;
     coords.push([
-      center.lng + r * Math.cos(angle),
+      center.lng + (r * Math.cos(angle)) / cosLat,
       center.lat + r * Math.sin(angle),
     ]);
   }
